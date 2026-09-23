@@ -1,0 +1,105 @@
+{
+  "name": "lifevpn",
+  "productName": "Life VPN",
+  "version": "2.2.0",
+  "description": "Life VPN — VPN-клиент для Windows на ядре Xray",
+  "main": "src/main/main.js",
+  "author": "stailegrow",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/self-check.js",
+    "vendor": "node scripts/vendor.js",
+    "icons": "python3 scripts/make-icons.py",
+    "dist": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/nunito": "5.3.0",
+    "country-flag-emoji-polyfill": "0.1.10",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "htm": "3.1.1",
+    "jsqr": "1.4.0",
+    "lucide-static": "1.47.0",
+    "preact": "10.29.8",
+    "resedit": "^2.0.3"
+  },
+  "build": {
+    "appId": "com.stailegrow.lifevpn",
+    "productName": "Life VPN",
+    "executableName": "LifeVPN",
+    "copyright": "© stailegrow",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "package.json",
+      "src/**/*",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin"
+      },
+      {
+        "from": "resources/tray",
+        "to": "tray"
+      },
+      {
+        "from": "resources/app-icon.png",
+        "to": "app-icon.png"
+      }
+    ],
+    "asar": true,
+    "electronLanguages": [
+      "ru",
+      "en-US"
+    ],
+    "afterPack": "scripts/after-pack.js",
+    "win": {
+      "icon": "build/icons/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "LifeVPN-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Life VPN",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icons/icon.ico",
+      "uninstallerIcon": "build/icons/icon.ico",
+      "installerLanguages": [
+        "ru_RU",
+        "en_US"
+      ],
+      "language": "1049",
+      "multiLanguageInstaller": true,
+      "include": "build/installer.nsh",
+      "artifactName": "LifeVPN-Setup-${version}.${ext}"
+    },
+    "publish": null
+  }
+}

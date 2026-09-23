@@ -1,0 +1,514 @@
+/*
+ * Life VPN для Windows. Геометрия и цвета — из мак-версии: все размеры
+ * проходят через общий масштаб (0.9 для раскладки, 0.981 для кеглей),
+ * цвета приходят из палитры через переменные.
+ */
+
+@font-face { font-family: 'LV Rounded'; font-weight: 400; src: url('fonts/nunito-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'LV Rounded'; font-weight: 400; src: url('fonts/nunito-cyrillic-400-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'LV Rounded'; font-weight: 500; src: url('fonts/nunito-latin-500-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'LV Rounded'; font-weight: 500; src: url('fonts/nunito-cyrillic-500-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'LV Rounded'; font-weight: 600; src: url('fonts/nunito-latin-600-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'LV Rounded'; font-weight: 600; src: url('fonts/nunito-cyrillic-600-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'LV Rounded'; font-weight: 700; src: url('fonts/nunito-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'LV Rounded'; font-weight: 700; src: url('fonts/nunito-cyrillic-700-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'LV Rounded'; font-weight: 800; src: url('fonts/nunito-latin-800-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'LV Rounded'; font-weight: 800; src: url('fonts/nunito-cyrillic-800-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'LV Mono'; font-weight: 400; src: url('fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'LV Mono'; font-weight: 400; src: url('fonts/jetbrains-mono-cyrillic-400-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'LV Mono'; font-weight: 500; src: url('fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'LV Mono'; font-weight: 500; src: url('fonts/jetbrains-mono-cyrillic-500-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+/* Флаги-эмодзи: в Windows их нет в системном шрифте, вместо флага
+   рисуются две буквы. Этот шрифт содержит только флаги стран. */
+@font-face { font-family: 'Twemoji Country Flags'; src: url('fonts/TwemojiCountryFlags.woff2') format('woff2'); unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E0063, U+E0065, U+E0067, U+E006C, U+E006E, U+E0073-E0074, U+E0077, U+E007F; }
+
+:root {
+  --rounded: 'Twemoji Country Flags', 'LV Rounded', 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
+  --body: 'Twemoji Country Flags', 'Segoe UI Variable Text', 'Segoe UI', 'LV Rounded', sans-serif;
+  --mono: 'LV Mono', 'Cascadia Mono', Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: default;
+  outline: none;
+}
+
+button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+input, textarea {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  outline: none;
+  background: transparent;
+  user-select: text;
+}
+
+.icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.icon svg { display: block; }
+
+.row { display: flex; flex-direction: row; align-items: center; }
+.col { display: flex; flex-direction: column; }
+.spacer { flex: 1 1 auto; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.selectable { user-select: text; cursor: text; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ---- Окно ------------------------------------------------------------ */
+
+#root { position: fixed; inset: 0; }
+
+.window {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* Полоса перетаскивания — на месте невидимого заголовка окна мака. */
+.drag-strip {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 19.8px;
+  -webkit-app-region: drag;
+  z-index: 2;
+}
+
+.window-controls {
+  position: absolute;
+  top: 0; right: 0;
+  display: flex;
+  z-index: 25;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button {
+  width: 36px;
+  height: 19px;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text2);
+  opacity: 0.75;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+.window-controls button:hover { opacity: 1; background: color-mix(in srgb, var(--text2) 16%, transparent); }
+.window-controls button.close:hover { background: #E81123; color: #fff; }
+.window-controls button:last-child { border-bottom-left-radius: 0; }
+
+.header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 19.8px 11.7px 8.1px;
+  -webkit-app-region: drag;
+}
+.header > * { -webkit-app-region: no-drag; }
+.header .wordmark { -webkit-app-region: drag; }
+
+.content { position: relative; z-index: 1; flex: 1 1 auto; min-height: 0; }
+
+.scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.scroll::-webkit-scrollbar { width: 6px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; border: 1px solid transparent; background-clip: padding-box; }
+/* Полоса прокрутки проявляется только под курсором — как на маке. */
+.scroll:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text2) 30%, transparent); background-clip: padding-box; }
+.scroll::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text2) 50%, transparent); background-clip: padding-box; }
+
+.stack { display: flex; flex-direction: column; }
+
+/* ---- Карточка ---------------------------------------------------------- */
+
+.card {
+  background: var(--card);
+  border-radius: 16.2px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.card-title {
+  display: flex;
+  padding: 11.7px 10.8px 2.7px;
+  font-family: var(--rounded);
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10.8px;
+}
+
+/* ---- Кнопки ------------------------------------------------------------ */
+
+.btn-accent, .btn-outline, .btn-danger {
+  font-family: var(--rounded);
+  font-weight: 700;
+  white-space: nowrap;
+  transition: opacity 0.1s;
+}
+.btn-accent {
+  color: rgba(0, 0, 0, 0.85);
+  background: var(--accent-gradient);
+  padding: 6px 12px;
+  border-radius: 6px 0 6px 0;
+  letter-spacing: 0.4px;
+}
+.btn-accent:active { opacity: 0.75; }
+.btn-accent:disabled { opacity: 0.45; }
+.btn-outline {
+  color: var(--text2);
+  background: var(--card);
+  padding: 6.3px 11.7px;
+  border-radius: 11.7px;
+}
+.btn-outline:active { opacity: 0.6; }
+.btn-danger {
+  color: rgba(255, 255, 255, 0.95);
+  background: var(--bad);
+  padding: 6px 12px;
+  border-radius: 6px 0 6px 0;
+  letter-spacing: 0.4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.btn-danger:active { opacity: 0.75; }
+
+.icon-btn { color: var(--text2); display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn:hover { color: var(--text); }
+
+.spinner {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  border: 1.6px solid color-mix(in srgb, var(--text2) 30%, transparent);
+  border-top-color: var(--text2);
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.spinner.small { width: 15px; height: 15px; border-width: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Шапка ------------------------------------------------------------- */
+
+.status-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5.4px 9.9px;
+  border-radius: 999px;
+  background: var(--card);
+  font-family: var(--rounded);
+  font-weight: 600;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.status-dot { width: 5.4px; height: 5.4px; border-radius: 50%; }
+
+.add-button {
+  width: 30.6px;
+  height: 30.6px;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.add-button:disabled { opacity: 0.6; }
+
+/* ---- Вкладки ----------------------------------------------------------- */
+
+.tabbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  padding: 5.4px 7.2px;
+  background: var(--card);
+}
+.tab {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6.3px 0;
+  border-radius: 12.6px;
+  color: var(--text2);
+  font-family: var(--rounded);
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  transition: background 0.12s, color 0.12s;
+}
+.tab.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+.footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: 5.4px 0;
+  background: var(--bg);
+  border-top: 1px solid var(--card-border);
+  font-family: var(--mono);
+  letter-spacing: 0.3px;
+  color: color-mix(in srgb, var(--text2) 75%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.footer .dot { color: color-mix(in srgb, var(--text2) 40%, transparent); margin: 0 6px; }
+
+/* ---- Строка сервера ---------------------------------------------------- */
+
+.server-row {
+  display: flex;
+  align-items: center;
+  gap: 8.1px;
+  padding: 6.3px 8.1px;
+  border-radius: 12.6px;
+  transition: background 0.14s, box-shadow 0.14s;
+}
+.flag-badge {
+  width: 23.4px;
+  height: 23.4px;
+  border-radius: 9.9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: 'Twemoji Country Flags', 'Segoe UI Emoji', sans-serif;
+  line-height: 1;
+}
+.chip {
+  font-family: var(--mono);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 1px 3.5px;
+  line-height: 1.25;
+}
+
+/* ---- Переключатель ----------------------------------------------------- */
+
+.toggle { display: flex; align-items: center; gap: 10px; }
+.toggle-track {
+  position: relative;
+  width: 27px;
+  height: 13.5px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  transition: background 0.16s ease-out;
+}
+.toggle-knob {
+  position: absolute;
+  top: 1.8px;
+  left: 1.8px;
+  width: 9.9px;
+  height: 9.9px;
+  border-radius: 50%;
+  transition: transform 0.16s ease-out, background 0.16s ease-out;
+}
+.toggle.on .toggle-knob { transform: translateX(13.5px); }
+
+/* ---- Поля ввода -------------------------------------------------------- */
+
+.field {
+  width: 100%;
+  padding: 7.2px 8.1px;
+  border-radius: 10.8px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--text);
+}
+.field::placeholder { color: color-mix(in srgb, var(--text2) 60%, transparent); }
+.sheet .field { background: var(--card); }
+textarea.field { resize: none; padding: 5.4px 6.5px; line-height: 1.35; }
+textarea.field::-webkit-scrollbar { width: 6px; }
+textarea.field::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text2) 30%, transparent); border-radius: 3px; }
+
+/* ---- Меню, окна, баннер ------------------------------------------------ */
+
+.overlay-layer { position: absolute; inset: 0; z-index: 20; }
+
+.menu-panel {
+  position: absolute;
+  top: 46.8px;
+  right: 11.7px;
+  width: 250px;
+  padding: 6.3px;
+  background: var(--bg);
+  border-radius: 11.7px 0 11.7px 0;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.20);
+  animation: fade-in 0.12s ease-out;
+}
+.menu-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8.1px;
+  padding: 6.3px 8.1px;
+  border-radius: 6px 0 6px 0;
+  text-align: left;
+  color: var(--text);
+}
+.menu-row .icon { color: var(--text2); width: 13.5px; }
+.menu-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.menu-row:hover .icon { color: var(--accent); }
+.menu-separator { height: 1px; background: var(--card-border); margin: 3.6px 0; }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.notice {
+  position: absolute;
+  z-index: 15;
+  top: 57.6px;
+  left: 11.7px;
+  right: 11.7px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8.1px 9.9px;
+  border-radius: 14.4px;
+  background: var(--card);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.18);
+  animation: notice-in 0.2s ease-out;
+}
+.notice.leaving { animation: notice-out 0.2s ease-in forwards; }
+@keyframes notice-in { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
+@keyframes notice-out { to { opacity: 0; transform: translateY(-14px); } }
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11.7px;
+  animation: fade-in 0.15s ease-out;
+  -webkit-app-region: no-drag;
+}
+.sheet {
+  width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-radius: 14px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.30);
+  overflow: hidden;
+  animation: sheet-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+@keyframes sheet-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+.sheet-head { display: flex; align-items: center; padding: 13.5px 14.4px 9.9px; }
+.sheet-rule { height: 1px; background: var(--card-border); flex-shrink: 0; }
+.sheet-body { display: flex; flex-direction: column; gap: 9.9px; padding: 14.4px; overflow-y: auto; }
+.sheet-foot { display: flex; align-items: center; gap: 7.2px; padding: 10.8px 14.4px; }
+
+.segmented { display: flex; gap: 5.4px; }
+.segment {
+  padding: 6.3px 12.6px;
+  border-radius: 11.7px;
+  background: var(--card);
+  color: var(--text2);
+  font-family: var(--rounded);
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+.segment.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+.confirm-backdrop {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  animation: fade-in 0.12s ease-out;
+}
+.confirm {
+  width: 100%;
+  background: var(--bg);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.confirm button { width: 100%; text-align: center; }
+
+/* ---- Сканер ------------------------------------------------------------ */
+
+.scanner {
+  position: relative;
+  height: 252px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.scanner .aim {
+  position: absolute;
+  inset: 30.6px;
+  border-radius: 16.2px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  pointer-events: none;
+}
+
+/* ---- Заставка ---------------------------------------------------------- */
+
+.splash {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.45s ease-out;
+}
+.splash.gone { opacity: 0; pointer-events: none; }
+.splash-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16.2px;
+  transform: scale(0.82);
+  opacity: 0;
+  transition: transform 0.75s cubic-bezier(0.34, 1.45, 0.5, 1), opacity 0.5s ease-out;
+}
+.splash-inner.appeared { transform: none; opacity: 1; }
