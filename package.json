@@ -1,22 +1,21 @@
 {
   "name": "lifevpn",
   "productName": "Life VPN",
-  "version": "2.2.0",
+  "version": "3.1.1",
   "description": "Life VPN — VPN-клиент для Windows на ядре Xray",
   "main": "src/main/main.js",
   "author": "stailegrow",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "scripts": {
     "start": "electron .",
     "test": "node test/self-check.js",
-    "vendor": "node scripts/vendor.js",
     "icons": "python3 scripts/make-icons.py",
     "dist": "electron-builder --win --x64"
   },
   "devDependencies": {
+    "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "5.3.0",
-    "@fontsource/nunito": "5.3.0",
     "country-flag-emoji-polyfill": "0.1.10",
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",

@@ -155,6 +155,8 @@ function parseVLESS(link) {
   config.shortID = nonEmpty(q.sid);
   config.spiderX = nonEmpty(q.spx);
   config.allowInsecure = ['1', 'true'].includes(String(q.allowInsecure || '').toLowerCase());
+  config.pinnedPeerCertSha256 = nonEmpty(q.pcs);
+  config.verifyPeerCertByName = nonEmpty(q.vcn);
   const alpn = nonEmpty(q.alpn);
   if (alpn) {
     config.alpn = alpn.split(',').map((v) => v.trim()).filter(Boolean);

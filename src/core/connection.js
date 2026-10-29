@@ -11,6 +11,7 @@ const IPChecker = require('./ipChecker');
 const SpeedTester = require('./speedTester');
 const SystemProxy = require('./systemProxy');
 const { XrayProcess, readLog } = require('./xray');
+const { RoutingLog } = require('./routingLog');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -37,6 +38,10 @@ class ConnectionManager extends EventEmitter {
     this.socksPort = 10808;
     this.httpPort = 10809;
     this.proxyApplied = false;
+
+    /** Журнал маршрутизации текущей сессии. */
+    this.routingLog = new RoutingLog();
+    this.routingLog.on('change', () => this.emit('routing-log'));
 
     this.core = new XrayProcess();
     this.core.onUnexpectedExit = (code) => this.handleCoreCrash(code);
@@ -78,9 +83,11 @@ class ConnectionManager extends EventEmitter {
         httpPort: this.httpPort,
         logLevel: 'warning',
         logPath: paths.coreLog(),
+        accessLogPath: paths.accessLog(),
         routing
       });
       fs.writeFileSync(paths.generatedConfig(), json);
+      this.routingLog.reset();
 
       this.core.start(paths.generatedConfig(), paths.coreLog());
 
@@ -100,6 +107,7 @@ class ConnectionManager extends EventEmitter {
       this.externalIP = ip;
       this.connectedSince = new Date().toISOString();
       this.state = { kind: 'connected' };
+      this.routingLog.begin();
       this.changed();
     } catch (error) {
       this.tearDown();
@@ -182,6 +190,7 @@ class ConnectionManager extends EventEmitter {
   }
 
   tearDown() {
+    this.routingLog.end();
     if (this.proxyApplied) {
       try { SystemProxy.disable(); } catch (_) { /* сделали что могли */ }
       this.proxyApplied = false;
@@ -190,6 +199,7 @@ class ConnectionManager extends EventEmitter {
   }
 
   handleCoreCrash(code) {
+    this.routingLog.end();
     if (!this.isConnected && !this.isBusy) return;
     if (this.proxyApplied) {
       try { SystemProxy.disable(); } catch (_) { /* сделали что могли */ }

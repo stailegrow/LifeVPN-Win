@@ -1,0 +1,69 @@
+# Сборка и публикация релиза.
+#
+# Новая версия = поменять "version" в package.json и отправить коммит.
+# GitHub соберёт установщик и zip для Windows x64 и выложит релиз
+# v<версия> — а установленные копии Life VPN подхватят его сами.
+name: Release
+
+on:
+  # На любой коммит в main: если релиз этой версии уже есть, сборка
+  # пропускается за пару секунд.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Версия
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Релиз уже есть?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.exists == 'false'
+        with:
+          node-version: 22
+
+      - name: Зависимости и ядро
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          npm ci
+          ./scripts/fetch-xray.sh
+
+      - name: Проверки
+        if: steps.check.outputs.exists == 'false'
+        run: npm test
+
+      - name: Сборка
+        if: steps.check.outputs.exists == 'false'
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Публикация
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          gh release create "v$V" "dist/LifeVPN-Setup-$V.exe" "dist/LifeVPN-$V-x64.zip" \
+            --title "Life VPN $V для Windows" \
+            --notes-file scripts/release-notes.md

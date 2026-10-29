@@ -15,6 +15,8 @@ function defaultOptions(overrides = {}) {
     httpPort: 10809,
     logLevel: 'warning',
     logPath: null,
+    // Журнал соединений: куда ушло каждое — туннель, напрямую, блок.
+    accessLogPath: null,
     routing: models.PRESETS.find((p) => p.id === 'global').make(),
     ...overrides
   };
@@ -39,6 +41,10 @@ function makeTree(config, options = {}) {
   const opts = defaultOptions(options);
   const log = { loglevel: opts.logLevel };
   if (opts.logPath) log.error = opts.logPath;
+  if (opts.accessLogPath) {
+    log.access = opts.accessLogPath;
+    log.dnsLog = false;
+  }
 
   const root = {
     log,
@@ -79,8 +85,17 @@ function inbounds(options) {
   ];
 }
 
+/**
+ * Стратегия резолва — в sockopt: в самом freedom она устарела с ядра 26.9,
+ * а sockopt понимают и прежние версии.
+ */
 function directOutbound() {
-  return { tag: 'direct', protocol: 'freedom', settings: { domainStrategy: 'UseIP' } };
+  return {
+    tag: 'direct',
+    protocol: 'freedom',
+    settings: {},
+    streamSettings: { sockopt: { domainStrategy: 'UseIP' } }
+  };
 }
 
 function blockOutbound() {
@@ -194,8 +209,15 @@ function realitySettings(config) {
   return reality;
 }
 
+/**
+ * `allowInsecure` в конфиг не пишется: ядро 26.9 его удалило и при значении
+ * true отказывается стартовать. Взамен — закрепление сертификата по хешу
+ * (`pcs`) или проверка по заданному имени (`vcn`).
+ */
 function tlsSettings(config) {
-  const tls = { allowInsecure: !!config.allowInsecure };
+  const tls = {};
+  if (config.pinnedPeerCertSha256) tls.pinnedPeerCertSha256 = config.pinnedPeerCertSha256;
+  if (config.verifyPeerCertByName) tls.verifyPeerCertByName = config.verifyPeerCertByName;
   if (config.sni) tls.serverName = config.sni;
   if (config.fingerprint) tls.fingerprint = config.fingerprint;
   if (config.alpn && config.alpn.length) tls.alpn = config.alpn.slice();

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Кладёт ядро Xray-core для Windows в resources/bin/xray.exe.
-# Версия та же, что в мак-версии; другую можно передать аргументом: v26.6.1
+# Версия закреплена в файле XRAY_VERSION — та же, что у мак-версии; другую
+# можно передать аргументом: v26.10.21
 set -euo pipefail
 
 REPO="XTLS/Xray-core"
-TAG="${1:-v26.6.1}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TAG="${1:-$(tr -d '[:space:]' < "${ROOT}/XRAY_VERSION")}"
 DEST="${ROOT}/resources/bin"
 mkdir -p "$DEST"
 

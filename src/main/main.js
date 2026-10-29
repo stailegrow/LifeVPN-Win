@@ -18,14 +18,20 @@ const { AppSettings } = require('../core/settings');
 const { ServerStore } = require('../core/serverStore');
 const { ConnectionManager } = require('../core/connection');
 const { formatUpdated } = require('../core/format');
+const { RoutingLog } = require('../core/routingLog');
+const { Updater } = require('../core/updater');
+const Demo = require('../core/demo');
 
 const t = L.t;
 const VERSION = app.getVersion();
+/** Версия ядра, с которой собран релиз, — только для демо-режима. */
+const XRAY_VERSION = '26.10.21';
 
-// Размер окна фиксирован намеренно, как и на маке: раскладка рассчитана под
-// одну ширину — ряд из семи кружков тем, вордмарк в шапке, подписи вкладок.
-const WINDOW_WIDTH = 368;
-const WINDOW_HEIGHT = 660;
+// 620×600, как у мак-версии 3.x: слева — боковая панель фиксированной
+// ширины, справа — контент на всю оставшуюся ширину. Панель и раскладка
+// карточек рассчитаны на эти размеры, поэтому окно нерастягиваемое.
+const WINDOW_WIDTH = 620;
+const WINDOW_HEIGHT = 600;
 
 app.setAppUserModelId('com.stailegrow.lifevpn');
 
@@ -48,7 +54,10 @@ function resource(...parts) {
   return path.join(resourcesDir, ...parts);
 }
 
-paths.setRoot(path.join(app.getPath('appData'), 'LifeVPN'));
+// Демо пишет во временную папку: настоящие данные остаются как были.
+paths.setRoot(Demo.isOn()
+  ? fs.mkdtempSync(path.join(require('os').tmpdir(), 'LifeVPN-demo-'))
+  : path.join(app.getPath('appData'), 'LifeVPN'));
 app.setPath('userData', path.join(app.getPath('appData'), 'LifeVPN', 'Chromium'));
 
 Xray.setBinary(process.env.LIFEVPN_XRAY || resource('bin', process.platform === 'win32' ? 'xray.exe' : 'xray'));
@@ -61,6 +70,7 @@ SystemProxy.setHelper(resource('bin', 'lifevpn-proxy.exe'));
 let settings;
 let store;
 let connection;
+let updater;
 const core = { xrayVersion: null, failure: null, isProbing: false };
 
 let mainWindow = null;
@@ -95,7 +105,9 @@ function snapshot() {
     store: { ...storeState, servers, subscriptions },
     connection: conn,
     core,
-    geoSummary: GeoAssets.summary()
+    geoSummary: Demo.isOn() ? t('477 КБ · 1 минуту назад', '477 KB · 1 minute ago') : GeoAssets.summary(),
+    routingLog: connection.routingLog.snapshot(),
+    updater: updater.snapshot()
   };
 }
 
@@ -117,10 +129,10 @@ function push() {
 
 function paletteBackground() {
   const backgrounds = {
-    sky: '#F2F7FD', mint: '#EFFAF4', lavender: '#F5F1FC', peach: '#FDF5EC',
-    rose: '#FDF0F5', night: '#1B2030', amoled: '#000000'
+    amoled: '#000000', panel: '#0C0A09', amethyst: '#09080F', lagoon: '#060B0D', amber: '#0B0906',
+    sky: '#F2F7FD', mint: '#EFFAF4', lavender: '#F5F1FC', peach: '#FDF5EC', rose: '#FDF0F5'
   };
-  return backgrounds[settings.get('paletteID')] || backgrounds.sky;
+  return backgrounds[settings.get('paletteID')] || backgrounds.amoled;
 }
 
 function createWindow() {
@@ -406,6 +418,25 @@ const actions = {
     return { image: image.toDataURL() };
   },
 
+  /** Весь журнал маршрутизации сессии — в текстовый файл. */
+  async exportRoutingLog() {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: t('Сохранить журнал маршрутизации', 'Save the routing log'),
+      defaultPath: path.join(app.getPath('documents'), RoutingLog.exportName()),
+      filters: [{ name: t('Текст', 'Text'), extensions: ['txt'] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    try {
+      fs.writeFileSync(result.filePath, '\ufeff' + connection.routingLog.report(), 'utf8');
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  },
+
+  async checkUpdates() { await updater.check(); },
+  async installUpdate() { await updater.install((url) => shell.openExternal(url)); },
+
   openCameraSettings() { shell.openExternal('ms-settings:privacy-webcam'); },
 
   /** Контекстное меню строки сервера — системное, как на маке. */
@@ -499,12 +530,28 @@ app.whenReady().then(async () => {
   settings = new AppSettings(app.getLocale());
   store = new ServerStore({ version: VERSION });
   connection = new ConnectionManager(settings);
+  updater = new Updater({
+    version: VERSION,
+    // Установщик кладёт рядом с программой деинсталлятор; у копии из
+    // zip-архива его нет.
+    installed: app.isPackaged && (() => {
+      try {
+        return fs.readdirSync(path.dirname(process.execPath)).some((name) => /^uninstall .*\.exe$/i.test(name));
+      } catch (_) {
+        return false;
+      }
+    })(),
+    onQuit: quit
+  });
 
   http.init(session);
+  if (Demo.isOn()) Demo.install({ store, connection, settings });
 
   settings.on('change', push);
   store.on('change', push);
   connection.on('change', push);
+  connection.on('routing-log', push);
+  updater.on('change', push);
 
   createWindow();
   createTray();
@@ -513,8 +560,15 @@ app.whenReady().then(async () => {
   powerMonitor.on('shutdown', shutdown);
   app.on('session-end', shutdown);
 
+  if (Demo.isOn()) {
+    core.xrayVersion = `Xray ${XRAY_VERSION} (Xray, Penetrates Everything.)`;
+    push();
+    return;
+  }
+
   probeCore();
   store.startAutoRefresh();
+  if (app.isPackaged) updater.startAutomaticChecks();
 
   // Базы правил — отдельной задачей: они ни от чего не зависят и не
   // должны задерживать замер задержки. Обновляются каждый запуск.
@@ -533,24 +587,13 @@ if (!app.isPackaged && process.env.LIFEVPN_SHOTS) {
     require('../../scripts/shots')(() => mainWindow, app, {
       setPalette: async (id) => { actions.updateSettings({ paletteID: id }); },
       setLanguage: async (lang) => { actions.updateSettings({ language: lang }); },
-      e2e: async () => {
-        const added = await store.quickAdd(process.env.LIFEVPN_E2E_LINK);
-        const server = store.servers.find((x) => x.address === '127.0.0.1');
-        store.select(server.id);
-        await connection.connect(server);
-        return { added, state: connection.state, ip: connection.externalIP };
-      },
+      connect: async () => { if (store.selected) connection.connect(store.selected); },
       speed: async () => { await connection.measureSpeed(); },
-      speedState: () => ({ speed: connection.speed, error: connection.speedError }),
-      disconnect: async () => { await connection.disconnect(); },
       fakeState: async (kind) => {
-        const server = store.selected;
-        connection.activeServer = server;
+        connection.activeServer = store.selected;
         connection.state = kind === 'failed'
           ? { kind, message: 'Ядро завершилось сразу с кодом 1:\nFailed to start: main: failed to load config files' }
           : { kind };
-        connection.externalIP = kind === 'connected' ? '185.22.153.41' : null;
-        connection.connectedSince = kind === 'connected' ? new Date(Date.now() - 754000).toISOString() : null;
         connection.changed();
       }
     });

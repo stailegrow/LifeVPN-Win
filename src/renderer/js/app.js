@@ -1,22 +1,77 @@
-// Корень интерфейса — перенос RootView.swift.
+// Корень интерфейса — перенос RootView.swift мак-версии 3.x.
 
 import { html, render, useState, useEffect, useRef, useMemo } from '../vendor/preact-htm.js';
 import { Icon } from './icons.js';
 import { AppContext, font, px, MenuPanel, NoticeBanner } from './ui.js';
-import { HUDBackground, Wordmark, TelemetryLine, LaunchSplash, SPLASH_DURATION } from './widgets.js';
-import { HomeTab, ServersTab, SettingsTab } from './screens.js';
+import { ObsidianBackground, LaunchSplash, SPLASH_DURATION } from './widgets.js';
+import { Sidebar, TABS, sidebarWidth } from './sidebar.js';
+import { HomeTab, ServersTab, RoutingTab, StatsTab, SettingsTab } from './screens.js';
 import { AddSheet, RenameSheet, DirectDomainsSheet, QRScannerSheet, decodeImage } from './sheets.js';
-import { palette as paletteOf, cssVariables, css, s } from './theme.js';
+import { palette as paletteOf, cssVariables, css, s, Metrics } from './theme.js';
 import { t, setLanguage } from './i18n.js';
 
 const api = window.lifevpn;
 const act = (name, ...args) => api.action(name, ...args);
 
-const TABS = [
-  { id: 'home', icon: 'house.fill', title: () => t('ГЛАВНАЯ', 'HOME') },
-  { id: 'servers', icon: 'server.rack', title: () => t('СЕРВЕРА', 'SERVERS') },
-  { id: 'settings', icon: 'gearshape.fill', title: () => t('НАСТРОЙКИ', 'SETTINGS') }
-];
+const readCollapsed = () => {
+  try { return localStorage.getItem('sidebarCollapsed') === '1'; } catch (_) { return false; }
+};
+const writeCollapsed = (value) => {
+  try { localStorage.setItem('sidebarCollapsed', value ? '1' : '0'); } catch (_) { /* не критично */ }
+};
+
+/**
+ * Заголовок раздела над контентом: крупное имя, строка пояснения и плашка
+ * состояния справа.
+ */
+function PageHeader({ tab, search, state, p }) {
+  const c = state.connection;
+  const kind = c.state.kind;
+  const info = TABS.find((x) => x.id === tab);
+
+  let subtitle;
+  switch (tab) {
+    case 'home':
+      if (kind === 'connected') {
+        const preset = state.presets.find((x) => x.id === state.settings.routing.presetID);
+        const name = preset ? preset.title : t('свои правила', 'custom rules');
+        subtitle = t(`Туннель поднят · маршрутизация «${name}»`, `Tunnel is up · routing “${name}”`);
+      } else {
+        subtitle = t('Выберите узел и подключитесь', 'Pick a node and connect');
+      }
+      break;
+    case 'servers':
+      subtitle = search ? t(`Поиск: «${search}»`, `Search: “${search}”`) : t('Все узлы и задержка до них', 'All nodes and their latency');
+      break;
+    case 'routing':
+      subtitle = t('Что идёт через туннель, а что — напрямую', 'What goes through the tunnel and what goes direct');
+      break;
+    case 'stats':
+      subtitle = t('Скорость, трафик и история задержки', 'Speed, traffic and latency history');
+      break;
+    default:
+      subtitle = t('Тема, язык и поведение', 'Theme, language and behaviour');
+  }
+
+  const chip = {
+    connected: { text: t('Защищено', 'Protected'), color: p.good },
+    connecting: { text: t('Подключение…', 'Connecting…'), color: p.warn },
+    failed: { text: t('Сбой', 'Fault'), color: p.bad },
+    disconnected: { text: t('Не защищено', 'Not protected'), color: p.textSecondary }
+  }[kind];
+
+  return html`
+    <div class="page-header">
+      <div class="col drag" style=${{ gap: px(s(2)), minWidth: 0, flex: '1 1 auto' }}>
+        <span class="truncate" style=${font('heavy', 20, { color: css(p.textPrimary), letterSpacing: '-0.4px' })}>${info.title()}</span>
+        <span class="truncate" style=${font('body', 11, { color: css(p.textSecondary) })}>${subtitle}</span>
+      </div>
+      <div class="status-chip glass" style=${font('heading', 11.5, { color: css(p.textPrimary) })}>
+        <span class="status-dot" style=${{ background: css(chip.color), boxShadow: `0 0 5px ${css(chip.color, 0.9)}` }} />
+        <span>${chip.text}</span>
+      </div>
+    </div>`;
+}
 
 function Root({ initial }) {
   const [state, setState] = useState(initial);
@@ -26,7 +81,10 @@ function Root({ initial }) {
   const [notice, setNotice] = useState(null);
   const [adding, setAdding] = useState(false);
   const [launching, setLaunching] = useState(true);
+  const [collapsed, setCollapsed] = useState(readCollapsed());
+  const [search, setSearch] = useState('');
   const noticeTimer = useRef(null);
+  const searchRef = useRef(null);
 
   setLanguage(state.lang);
   const p = paletteOf(state.settings.paletteID);
@@ -48,12 +106,35 @@ function Root({ initial }) {
     return () => clearTimeout(id);
   }, [launching]);
 
-  // Переменные палитры — на корень документа, чтобы и полоса прокрутки,
-  // и фон под окном были в цветах темы.
+  // Переменные палитры — на корень документа.
   useEffect(() => {
     const vars = cssVariables(p);
     for (const [key, value] of Object.entries(vars)) document.documentElement.style.setProperty(key, value);
   }, [p]);
+
+  const toggleCollapsed = () => {
+    setCollapsed((value) => {
+      writeCollapsed(!value);
+      return !value;
+    });
+  };
+
+  // Поиск: ввод в строке переключает на «Узлы».
+  const onSearch = (value) => {
+    setSearch(value);
+    if (value && tab !== 'servers') setTab('servers');
+  };
+
+  /** Разворачивает панель, если она свёрнута, и ставит курсор в поиск. */
+  const focusSearch = () => {
+    if (collapsed) {
+      setCollapsed(false);
+      writeCollapsed(false);
+      setTimeout(() => searchRef.current && searchRef.current.focus(), 260);
+    } else if (searchRef.current) {
+      searchRef.current.focus();
+    }
+  };
 
   const show = (text, isError) => {
     clearTimeout(noticeTimer.current);
@@ -94,19 +175,26 @@ function Root({ initial }) {
     else show(t('В этой картинке QR-код не распознался.', 'No QR code was recognised in this image.'), true);
   };
 
-  // Ctrl+V в окне — то же, что «Вставить из буфера», если фокус не в поле.
+  // Ctrl+V в окне — «Вставить из буфера», если фокус не в поле;
+  // Ctrl+K — поиск узла (⌘K на маке).
   useEffect(() => {
     const onKey = (e) => {
       const target = e.target;
       const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v' && !typing && !sheet) {
+      const key = e.key.toLowerCase();
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && (key === 'k' || e.code === 'KeyK') && !sheet) {
+        e.preventDefault();
+        focusSearch();
+        return;
+      }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && (key === 'v' || e.code === 'KeyV') && !typing && !sheet) {
         e.preventDefault();
         paste();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [sheet]);
+  }, [sheet, collapsed]);
 
   const menuItems = [
     { icon: 'doc.on.clipboard', title: t('Вставить из буфера', 'Paste from clipboard'), subtitle: t('добавится сразу', 'added right away'),
@@ -121,65 +209,43 @@ function Root({ initial }) {
       action: () => { setMenuOpen(false); setSheet({ kind: 'add', mode: 'links' }); } }
   ];
 
-  const kind = state.connection.state.kind;
-  const statusCode = { connected: 'Secure', connecting: t('Связь', 'Linking'), failed: t('Сбой', 'Fault'), disconnected: 'Offline' }[kind];
-  const statusColor = { connected: p.good, connecting: p.warn, failed: p.bad, disconnected: p.idleRing }[kind];
-
-  const footerItems = [];
-  if (state.core.xrayVersion) footerItems.push(state.core.xrayVersion.split(' ').slice(0, 2).join(' ').toUpperCase());
-  const preset = state.presets.find((x) => x.id === state.settings.routing.presetID);
-  footerItems.push((preset ? preset.title : t('СВОИ ПРАВИЛА', 'CUSTOM RULES')).toUpperCase());
-  footerItems.push('PROXY MODE');
-
   const context = useMemo(() => ({ palette: p, state, act }), [p, state]);
-
   const renamed = sheet && sheet.kind === 'rename' ? state.store.subscriptions.find((x) => x.id === sheet.id) : null;
 
-  // Кнопки окна стоят в разметке после шапки намеренно: на Windows область
-  // перетаскивания, объявленная позже, перекрывает объявленные раньше
-  // кнопки, и клики по ним уходили в перетаскивание окна.
+  // Меню «плюс» — у кнопки в шапке боковой панели.
+  const menuAnchor = { top: px(s(12) + s(44)), left: px(Math.max(s(12), s(12) + sidebarWidth(collapsed) - s(64))) };
+
   return html`
     <${AppContext.Provider} value=${context}>
       <div class="window" key=${state.lang}>
-        <${HUDBackground} animated=${state.settings.backgroundAnimation} />
+        <${ObsidianBackground} animated=${state.settings.backgroundAnimation} />
         <div class="drag-strip" />
 
-        <div class="header">
-          <${Wordmark} />
-          <span class="spacer" style="min-width:8px" />
-          <div class="status-chip" style=${font('label', 10.5)}>
-            <span class="status-dot" style=${{ background: css(statusColor) }} />
-            <span>${statusCode}</span>
+        <div class="layout">
+          <${Sidebar} tab=${tab} onTab=${(id) => setTab(id)}
+                      collapsed=${collapsed} onToggleCollapse=${toggleCollapsed} onFocusSearch=${focusSearch}
+                      search=${search} onSearch=${onSearch} searchRef=${searchRef}
+                      adding=${adding} onAdd=${() => setMenuOpen(!menuOpen)} />
+
+          <div class="main">
+            <${PageHeader} tab=${tab} search=${search} state=${state} p=${p} />
+            <div class="content" key=${tab}>
+              ${tab === 'home' && html`<${HomeTab} onAddSubscription=${() => setSheet({ kind: 'add', mode: 'subscription' })} onPaste=${paste} />`}
+              ${tab === 'servers' && html`<${ServersTab} query=${search} />`}
+              ${tab === 'routing' && html`<${RoutingTab} onEditDomains=${() => setSheet({ kind: 'domains' })} />`}
+              ${tab === 'stats' && html`<${StatsTab} onNotice=${show} />`}
+              ${tab === 'settings' && html`<${SettingsTab} />`}
+            </div>
+            ${notice && html`<${NoticeBanner} key=${notice.key} text=${notice.text} isError=${notice.isError} leaving=${notice.leaving} />`}
           </div>
-          <button class="add-button" disabled=${adding} onClick=${() => setMenuOpen(!menuOpen)}
-                  title=${t('Добавить подписку или узлы', 'Add a subscription or nodes')}>
-            <${Icon} name=${adding ? 'hourglass' : 'plus'} size=${s(12) * 1.2} />
-          </button>
         </div>
-
-        <div class="content">
-          ${tab === 'home' && html`<${HomeTab} onAddSubscription=${() => setSheet({ kind: 'add', mode: 'subscription' })}
-                                                onPaste=${paste}
-                                                onRename=${(id) => setSheet({ kind: 'rename', id })} />`}
-          ${tab === 'servers' && html`<${ServersTab} />`}
-          ${tab === 'settings' && html`<${SettingsTab} onEditDomains=${() => setSheet({ kind: 'domains' })} />`}
-        </div>
-
-        <div class="tabbar">
-          ${TABS.map((item) => html`
-            <button class=${`tab ${tab === item.id ? 'active' : ''}`} onClick=${() => setTab(item.id)} style=${font('heading', 8.5)}>
-              <${Icon} name=${item.icon} size=${s(12) * 1.2} />
-              <span>${item.title()}</span>
-            </button>`)}
-        </div>
-        <${TelemetryLine} items=${footerItems} />
 
         <div class="window-controls">
-          <button onClick=${() => act('minimize')} title=${t('Свернуть', 'Minimize')}><${Icon} name="minimize" size=${12} /></button>
-          <button class="close" onClick=${() => act('hide')} title=${t('Закрыть', 'Close')}><${Icon} name="close" size=${12} /></button>
+          <button onClick=${() => act('minimize')} title=${t('Свернуть', 'Minimize')}><${Icon} name="minimize" size=${13} /></button>
+          <button class="close" onClick=${() => act('hide')} title=${t('Закрыть', 'Close')}><${Icon} name="close" size=${13} /></button>
         </div>
-        ${menuOpen && html`<${MenuPanel} items=${menuItems} onDismiss=${() => setMenuOpen(false)} />`}
-        ${notice && html`<${NoticeBanner} key=${notice.key} text=${notice.text} isError=${notice.isError} leaving=${notice.leaving} />`}
+
+        ${menuOpen && html`<${MenuPanel} items=${menuItems} anchor=${menuAnchor} onDismiss=${() => setMenuOpen(false)} />`}
 
         ${sheet && sheet.kind === 'add' && html`<${AddSheet} initialMode=${sheet.mode} onClose=${() => setSheet(null)} />`}
         ${renamed && html`<${RenameSheet} subscription=${renamed} onClose=${() => setSheet(null)} />`}
@@ -200,3 +266,5 @@ function Root({ initial }) {
   await document.fonts.ready.catch(() => {});
   render(html`<${Root} initial=${initial} />`, document.getElementById('root'));
 })();
+
+export { Metrics };

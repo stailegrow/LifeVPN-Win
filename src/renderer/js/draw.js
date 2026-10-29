@@ -1,8 +1,8 @@
 // Отрисовка на холсте: живой фон, кнопка подключения, фирменный знак и
-// мини-графики. Формулы перенесены из HUDBackground.swift, ConnectSlab.swift,
-// HUDShapes.swift и LatencyCard.swift без изменений.
+// мини-графики. Формулы перенесены из Glass.swift, BlobConnectButton.swift,
+// Wordmark.swift и LatencyCard.swift без изменений.
 
-import { css, mix, hex } from './theme.js';
+import { css, hex } from './theme.js';
 
 /**
  * Органическое пятно. Радиус гуляет по двум гармоникам, точки соединяются
@@ -46,72 +46,97 @@ export function prepare(canvas) {
 }
 
 // ---------------------------------------------------------------------------
-// Живой фон
+// Живой фон: «северное сияние» (ObsidianBackground в Glass.swift)
 // ---------------------------------------------------------------------------
 
-const BLOBS = [
-  { restX: 0.16, restY: 0.14, radius: 0.60, drift: 0.16, period: 11, phase: 0, colorPeriod: 14, colorPhase: 0 },
-  { restX: 0.88, restY: 0.28, radius: 0.50, drift: 0.14, period: 13, phase: 2.1, colorPeriod: 17, colorPhase: 3.5 },
-  { restX: 0.24, restY: 0.80, radius: 0.66, drift: 0.15, period: 15, phase: 4.2, colorPeriod: 20, colorPhase: 1.7 },
-  { restX: 0.82, restY: 0.86, radius: 0.44, drift: 0.13, period: 9, phase: 5.6, colorPeriod: 12, colorPhase: 5.0 }
+/**
+ * Несколько вытянутых мягких световых лент, которые медленно плывут,
+ * поворачиваются и дышат поверх тёмного поля. На тёмных темах ленты
+ * складываются светом (там, где пересекаются, ярче), сверху — едва заметное
+ * зерно, чтобы градиенты не шли полосами. Раскладка — в долях окна.
+ */
+const RIBBONS = [
+  { x: 0.80, y: 0.16, driftX: 0.10, driftY: 0.06, length: 1.05, thickness: 0.36, angle: -0.45, sway: 0.25, period: 23, phase: 0.0, tone: 0, alpha: 0.55 },
+  { x: 0.32, y: 0.88, driftX: 0.12, driftY: 0.05, length: 1.10, thickness: 0.32, angle: 0.30, sway: 0.20, period: 29, phase: 1.7, tone: 1, alpha: 0.50 },
+  { x: 0.64, y: 0.62, driftX: 0.14, driftY: 0.08, length: 0.80, thickness: 0.22, angle: -0.15, sway: 0.35, period: 19, phase: 3.1, tone: 2, alpha: 0.32 },
+  { x: 0.14, y: 0.22, driftX: 0.08, driftY: 0.08, length: 0.70, thickness: 0.22, angle: 0.80, sway: 0.30, period: 25, phase: 4.4, tone: 0, alpha: 0.22 },
+  { x: 0.96, y: 0.78, driftX: 0.06, driftY: 0.10, length: 0.70, thickness: 0.26, angle: 1.15, sway: 0.22, period: 31, phase: 2.5, tone: 1, alpha: 0.34 }
 ];
 
-/** Круг оттенков, по которому переливается каждое пятно. */
-function cycleColors(p) {
-  const list = [p.blob1, p.blob2, p.blob3];
-  if (p.isDark) return list.map((c) => mix(c, p.accentStart, 0.55)).concat([mix(p.blob1, p.accentEnd, 0.55)]);
-  return list.concat([mix(p.blob2, p.accentStart, 0.35)]);
+/** Плитка шума для зерна. Генерируется один раз, детерминированно. */
+let grainTile = null;
+function grain() {
+  if (grainTile) return grainTile;
+  const side = 160;
+  const tile = document.createElement('canvas');
+  tile.width = side;
+  tile.height = side;
+  const ctx = tile.getContext('2d');
+  const image = ctx.createImageData(side, side);
+  let seed = 0x9E3779B97F4A7C15n;
+  const mask = (1n << 64n) - 1n;
+  for (let i = 0; i < side * side; i++) {
+    seed = (seed * 6364136223846793005n + 1442695040888963407n) & mask;
+    const value = Number(seed >> 56n);
+    image.data[i * 4] = value;
+    image.data[i * 4 + 1] = value;
+    image.data[i * 4 + 2] = value;
+    image.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  grainTile = tile;
+  return tile;
 }
 
-function blended(colors, position) {
-  const segment = position * colors.length;
-  const index = Math.min(Math.max(Math.floor(segment), 0), colors.length - 1);
-  const next = (index + 1) % colors.length;
-  return mix(colors[index], colors[next], segment - index);
-}
-
-/**
- * Четыре мягких пятна, которые дрейфуют, дышат и переливаются цветами темы.
- * Амплитуда считается от размера окна. На тёмных темах к пятнам
- * подмешивается акцентный цвет — переливание должно читаться и на чёрном.
- */
 export function drawBackground(canvas, p, time, still) {
   const { ctx, w, h } = prepare(canvas);
+  const t0 = still ? 0 : time;
   ctx.fillStyle = css(p.background);
   ctx.fillRect(0, 0, w, h);
 
-  const cycle = cycleColors(p);
-  const alpha = p.isDark ? 0.5 : 0.68;
-  const minDim = Math.min(w, h);
+  ctx.save();
+  ctx.globalCompositeOperation = p.isDark ? 'lighter' : 'source-over';
+  for (const ribbon of RIBBONS) {
+    const t = (t0 / ribbon.period + ribbon.phase) * 2 * Math.PI;
+    const cx = (ribbon.x + ribbon.driftX * Math.sin(t)) * w;
+    const cy = (ribbon.y + ribbon.driftY * Math.sin(t * 0.7 + 1.1)) * h;
+    const angle = ribbon.angle + ribbon.sway * Math.sin(t * 0.5);
+    const breathe = 1 + 0.12 * Math.sin(t * 1.3);
+    const color = p.orbs[ribbon.tone] || p.orbs[0];
+    const alpha = p.isDark ? Math.min(1, ribbon.alpha * 1.45) : ribbon.alpha * 0.7;
 
-  for (const blob of BLOBS) {
-    const t = still ? 0 : (time / blob.period + blob.phase) * 2 * Math.PI;
-    const driftPx = blob.drift * minDim;
-    const cx = blob.restX * w + Math.sin(t) * driftPx;
-    const cy = blob.restY * h + Math.sin(t * 0.8 + 1.3) * driftPx;
-    const pulse = still ? 0 : Math.sin(t * 1.3);
-    const radius = blob.radius * minDim * (1 + pulse * 0.08);
-    const position = ((time / blob.colorPeriod + blob.colorPhase) % 1 + 1) % 1;
-    const color = still ? cycle[0] : blended(cycle, position);
-
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    // Единичный круг, растянутый в эллипс: радиальный градиент
+    // растягивается вместе с ним и даёт мягкую ленту без размытия.
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.scale((ribbon.length * w) / 2 * breathe, (ribbon.thickness * h) / 2);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
     g.addColorStop(0, css(color, alpha));
-    g.addColorStop(0.7, css(color, alpha * 0.5));
+    g.addColorStop(0.45, css(color, alpha * 0.45));
     g.addColorStop(1, css(color, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
+  ctx.restore();
 
-  // Виньетка притушивает края, чтобы карточки в центре читались даже когда
-  // пятно проходит прямо под ними.
-  const cx = w / 2;
-  const cy = h / 2;
-  const v = ctx.createRadialGradient(cx, cy, 90, cx, cy, 560);
+  // Зерно поверх лент.
+  ctx.save();
+  ctx.globalAlpha = p.isDark ? 0.05 : 0.06;
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(grain(), 'repeat');
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+
+  // Края притушены, середина остаётся спокойной под карточками.
+  const vx = w * 0.6;
+  const vy = h * 0.45;
+  const v = ctx.createRadialGradient(vx, vy, 180, vx, vy, 700);
   v.addColorStop(0, css(p.background, 0));
-  v.addColorStop(0.5, css(p.background, 0));
-  v.addColorStop(1, css(p.background, 0.55));
+  v.addColorStop(1, css(p.background, p.isDark ? 0.42 : 0.3));
   ctx.fillStyle = v;
   ctx.fillRect(0, 0, w, h);
 }

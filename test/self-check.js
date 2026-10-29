@@ -41,20 +41,22 @@ const equal = (actual, expected, label) => assert.deepStrictEqual(actual, expect
 const expect = (condition, message) => assert.ok(condition, message);
 const unwrap = (value, label) => { assert.ok(value != null, `${label}: значение отсутствует`); return value; };
 
-// Структурно повторяют боевые ссылки, но с обезличенными ключами.
+// Выдуманные ссылки той же структуры, что у настоящих. Ни одно значение не
+// взято с реальных серверов: адреса, ключи, shortId, пути и порты —
+// заглушки, потому что код лежит в публичном репозитории.
 const Sample = {
-  realityTCP: 'vless://00000000-0000-4000-8000-000000000001@nl.example.org:2026'
+  realityTCP: 'vless://00000000-0000-4000-8000-000000000001@nl.example.org:443'
     + '?encryption=none&flow=xtls-rprx-vision&fp=firefox'
     + '&pbk=AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKK'
-    + '&security=reality&sid=958559f8df0a&sni=www.mozilla.org'
-    + '&spx=%2F2bb01d3e9e2403f&type=tcp#%F0%9F%87%B3%F0%9F%87%B1%20Netherlands',
-  realityXHTTP: 'vless://00000000-0000-4000-8000-000000000002@de.example.org:2029'
+    + '&security=reality&sid=0123456789ab&sni=www.example.com'
+    + '&spx=%2Fsample-path-one&type=tcp#%F0%9F%87%B3%F0%9F%87%B1%20Netherlands',
+  realityXHTTP: 'vless://00000000-0000-4000-8000-000000000002@de.example.org:8443'
     + '?encryption=none'
     + '&extra=%7B%22mode%22%3A%22stream-up%22%2C%22xPaddingBytes%22%3A%22100-1000%22%7D'
-    + '&fp=firefox&host=&mode=stream-up&path=%2Fapi%2Fv1%2Faddon%2Fstream'
+    + '&fp=firefox&host=&mode=stream-up&path=%2Fsample%2Fxhttp'
     + '&pbk=LLLLMMMMNNNNOOOOPPPPQQQQRRRRSSSSTTTTUUUUVVV'
-    + '&security=reality&sid=d3&sni=services.addons.mozilla.org'
-    + '&spx=%2F0603ab5b1cf278c&type=xhttp&x_padding_bytes=100-1000'
+    + '&security=reality&sid=ab&sni=cdn.example.com'
+    + '&spx=%2Fsample-path-two&type=xhttp&x_padding_bytes=100-1000'
     + '#%F0%9F%87%A9%F0%9F%87%AA%20Germany'
 };
 
@@ -66,12 +68,12 @@ console.log('\nПарсер ссылок');
 check('vless/reality поверх tcp разбирается', () => {
   const c = LinkParser.parse(Sample.realityTCP);
   equal(c.address, 'nl.example.org', 'адрес');
-  equal(c.port, 2026, 'порт');
+  equal(c.port, 443, 'порт');
   equal(c.security, 'reality', 'тип защиты');
   equal(c.transport, 'tcp', 'транспорт');
   equal(c.flow, 'xtls-rprx-vision', 'flow');
-  equal(c.sni, 'www.mozilla.org', 'sni');
-  equal(c.spiderX, '/2bb01d3e9e2403f', 'spiderX');
+  equal(c.sni, 'www.example.com', 'sni');
+  equal(c.spiderX, '/sample-path-one', 'spiderX');
 });
 check('имя с эмодзи декодируется', () => {
   equal(LinkParser.parse(Sample.realityTCP).name, '🇳🇱 Netherlands', 'имя');
@@ -80,7 +82,7 @@ check('xhttp разбирается со всеми параметрами', () 
   const c = LinkParser.parse(Sample.realityXHTTP);
   equal(c.transport, 'xhttp', 'транспорт');
   equal(c.xhttpMode, 'stream-up', 'режим');
-  equal(c.path, '/api/v1/addon/stream', 'путь');
+  equal(c.path, '/sample/xhttp', 'путь');
   equal(c.xPaddingBytes, '100-1000', 'padding');
   expect(c.flow == null, 'у xhttp-ссылки не должно быть flow');
   expect(c.xhttpExtraJSON != null, 'extra потерялся');
@@ -89,7 +91,7 @@ check('пустой host не превращается в пустую стро�
   expect(LinkParser.parse(Sample.realityXHTTP).host == null, 'host должен быть null');
 });
 check('короткий shortId сохраняется', () => {
-  equal(LinkParser.parse(Sample.realityXHTTP).shortID, 'd3', 'shortId');
+  equal(LinkParser.parse(Sample.realityXHTTP).shortID, 'ab', 'shortId');
 });
 check('splithttp считается тем же xhttp', () => {
   equal(LinkParser.parse(Sample.realityXHTTP.replace('type=xhttp', 'type=splithttp')).transport, 'xhttp', 'транспорт');
@@ -114,8 +116,8 @@ check('reality-блок собирается для tcp', () => {
   equal(stream.network, 'tcp', 'network');
   equal(stream.security, 'reality', 'security');
   const reality = unwrap(stream.realitySettings, 'realitySettings');
-  equal(reality.serverName, 'www.mozilla.org', 'serverName');
-  equal(reality.shortId, '958559f8df0a', 'shortId');
+  equal(reality.serverName, 'www.example.com', 'serverName');
+  equal(reality.shortId, '0123456789ab', 'shortId');
 });
 check('vision доживает до конфига на tcp', () => {
   equal(firstUser(Builder.outbound(LinkParser.parse(Sample.realityTCP))).flow, 'xtls-rprx-vision', 'flow');
@@ -129,7 +131,7 @@ check('xhttpSettings — слияние extra и явных параметров
   const s = Builder.xhttpSettings(LinkParser.parse(Sample.realityXHTTP));
   equal(s.mode, 'stream-up', 'mode');
   equal(s.xPaddingBytes, '100-1000', 'xPaddingBytes');
-  equal(s.path, '/api/v1/addon/stream', 'path');
+  equal(s.path, '/sample/xhttp', 'path');
   expect(s.host === undefined, 'пустой host не должен попадать в конфиг');
 });
 check('незнакомые поля из extra не теряются', () => {
@@ -250,19 +252,19 @@ check('выключенный обход LAN убирает правило ло�
 });
 check('свои домены идут напрямую и раньше правил туннеля', () => {
   const config = bypassRU();
-  config.directDomains = ['mail.company.ru'];
+  config.directDomains = ['mail.example.com'];
   const rules = Builder.routing(config).rules;
-  const mine = rules.findIndex((r) => (r.domain || []).includes('mail.company.ru'));
+  const mine = rules.findIndex((r) => (r.domain || []).includes('mail.example.com'));
   const firstProxy = rules.findIndex((r) => r.outboundTag === 'proxy');
   expect(mine >= 0 && firstProxy >= 0 && mine < firstProxy, 'свой домен обязан побеждать общие категории');
   equal(rules[mine].outboundTag, 'direct', 'тег правила');
 });
 check('свои домены резолвятся системным DNS', () => {
   const config = bypassRU();
-  config.directDomains = ['mail.company.ru'];
+  config.directDomains = ['mail.example.com'];
   const first = unwrap(Builder.dns(config), 'блок dns').servers[0];
   equal(first.address, 'localhost', 'резолвер');
-  expect(first.domains.includes('mail.company.ru'), 'домен должен быть в списке');
+  expect(first.domains.includes('mail.example.com'), 'домен должен быть в списке');
 });
 check('при обходе LAN добавляются имена без точки и зона .local', () => {
   const config = bypassRU();
@@ -278,7 +280,7 @@ check('российские домены резолвятся местным DNS
 });
 check('системный резолвер стоит раньше публичных', () => {
   const config = bypassRU();
-  config.directDomains = ['vexch01.uvi.lan'];
+  config.directDomains = ['intranet.example.com'];
   equal(unwrap(Builder.dns(config), 'блок dns').servers[0].address, 'localhost', 'первым обязан идти системный');
 });
 check('без списков и без обхода LAN блока dns нет', () => {
@@ -318,6 +320,93 @@ check('IPv6-адрес узла разбирается без скобок', () 
   equal(c.port, 443, 'порт');
 });
 
+// ---------------------------------------------------------------------------
+// Версия 3.x: ядро 26.9+, журнал маршрутизации, обновления, темы.
+// ---------------------------------------------------------------------------
+
+const RL = require('../src/core/routingLog');
+const { isNewer } = require('../src/core/updater');
+const TLSSample = 'vless://00000000-0000-4000-8000-000000000003@tls.example.org:443'
+  + '?encryption=none&security=tls&sni=tls.example.org&fp=chrome&type=ws&path=%2Fws'
+  + '&allowInsecure=1&pcs=0000000000000000000000000000000000000000000000000000000000000000'
+  + '&vcn=cert.example.org#TLS';
+
+console.log('\nВерсия 3.x');
+check('pcs и vcn из ссылки сохраняются', () => {
+  const c = LinkParser.parse(TLSSample);
+  equal(c.pinnedPeerCertSha256, '0'.repeat(64), 'pcs');
+  equal(c.verifyPeerCertByName, 'cert.example.org', 'vcn');
+});
+check('allowInsecure в конфиг не попадает, pcs и vcn — попадают', () => {
+  const tree = Builder.makeTree(LinkParser.parse(TLSSample));
+  const tls = unwrap(tree.outbounds[0].streamSettings.tlsSettings, 'tlsSettings');
+  expect(!('allowInsecure' in tls), 'allowInsecure удалён в ядре 26.9');
+  equal(tls.pinnedPeerCertSha256, '0'.repeat(64), 'pinnedPeerCertSha256');
+  equal(tls.verifyPeerCertByName, 'cert.example.org', 'verifyPeerCertByName');
+});
+check('стратегия direct — в sockopt, а не в settings', () => {
+  const direct = Builder.makeTree(LinkParser.parse(Sample.realityTCP)).outbounds.find((o) => o.tag === 'direct');
+  expect(!direct.settings.domainStrategy, 'в freedom.settings стратегия устарела');
+  equal(direct.streamSettings.sockopt.domainStrategy, 'UseIP', 'sockopt');
+});
+check('журнал соединений включается путём к access-логу', () => {
+  const tree = Builder.makeTree(LinkParser.parse(Sample.realityTCP), { accessLogPath: 'C:\\x\\access.log' });
+  equal(tree.log.access, 'C:\\x\\access.log', 'access');
+  equal(tree.log.dnsLog, false, 'dnsLog');
+  expect(!('access' in Builder.makeTree(LinkParser.parse(Sample.realityTCP)).log), 'без пути журнала нет');
+});
+check('строка журнала: socks → direct по правилу', () => {
+  const e = unwrap(RL.parseLine('2026/10/23 06:39:53.219282 from tcp:127.0.0.1:42840 accepted tcp:github.com:443 [socks -> direct]'), 'запись');
+  equal([e.time, e.network, e.host, e.port, e.inbound, e.route, e.byDefault], ['06:39:53', 'TCP', 'github.com', '443', 'socks', 'direct', false], 'поля');
+});
+check('строка журнала: http-вход, маршрут по умолчанию', () => {
+  const e = unwrap(RL.parseLine('2026/10/23 06:39:54.1 from 127.0.0.1:5000 accepted //www.youtube.com:443 [http >> proxy]\r'), 'запись');
+  equal([e.host, e.route, e.byDefault], ['www.youtube.com', 'proxy', true], 'поля');
+});
+check('строка журнала: обычный HTTP целым адресом', () => {
+  const e = unwrap(RL.parseLine('2026/10/29 10:36:00.402550 from 127.0.0.1:45522 accepted http://example.com/ [http -> direct]'), 'запись');
+  equal([e.host, e.port, e.route], ['example.com', '80', 'direct'], 'поля');
+});
+check('строка журнала: udp и IPv6 в скобках', () => {
+  const e = unwrap(RL.parseLine('2026/10/23 06:40:00.0 from udp:127.0.0.1:1 accepted udp:[2001:db8::1]:443 [socks -> block]'), 'запись');
+  equal([e.network, e.host, e.route], ['UDP', '2001:db8::1', 'block'], 'поля');
+});
+check('служебные DNS-запросы ядра в журнал не попадают', () => {
+  expect(RL.parseLine('2026/10/23 06:40:00.0 from DNS accepted udp:8.8.8.8:53 [dns -> proxy]') == null, 'DNS отбрасывается');
+  expect(RL.parseLine('случайная строка лога') == null, 'мусор отбрасывается');
+});
+check('журнал дочитывает только новые строки и считает группы', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lifevpn-log-'));
+  require('../src/core/paths').setRoot(dir);
+  const log = new RL.RoutingLog();
+  const line = (host, tag) => `2026/10/23 06:39:53.1 from tcp:127.0.0.1:1 accepted tcp:${host}:443 [socks -> ${tag}]\n`;
+  fs.writeFileSync(path.join(dir, 'access.log'), line('a.example', 'proxy') + line('b.example', 'direct'));
+  log.poll();
+  fs.appendFileSync(path.join(dir, 'access.log'), line('c.example', 'proxy') + 'неполная');
+  log.poll();
+  equal(log.entries.map((e) => e.host), ['c.example', 'b.example', 'a.example'], 'новые сверху');
+  equal(log.counts, { proxy: 2, direct: 1 }, 'счётчики');
+  expect(log.report().includes('Соединений: 3'), 'выгрузка содержит итог');
+});
+check('сравнение версий — по числам', () => {
+  expect(isNewer('3.10.0', '3.9.9'), '3.10 новее 3.9');
+  expect(isNewer('3.1.1', '3.1.0'), '3.1.1 новее 3.1.0');
+  expect(!isNewer('3.1.1', '3.1.1'), 'та же версия не новее');
+  expect(!isNewer('2.2.0', '3.1.1'), 'старая версия не новее');
+  expect(!isNewer('9.9.9', 'dev'), 'разработческий запуск обновлений не предлагает');
+});
+check('старые настройки переезжают на тему «Life night» один раз', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lifevpn-settings-'));
+  const paths = require('../src/core/paths');
+  paths.setRoot(dir);
+  const { AppSettings } = require('../src/core/settings');
+  fs.writeFileSync(paths.settings(), JSON.stringify({ paletteID: 'night', language: 'ru' }));
+  equal(new AppSettings('ru').get('paletteID'), 'amoled', 'убранная «Ночь» → Life night');
+  const second = new AppSettings('ru');
+  second.update({ paletteID: 'panel' });
+  equal(new AppSettings('ru').get('paletteID'), 'panel', 'дальше выбор пользователя не трогаем');
+});
+
 // Проверка ядром — только если бинарник под рукой.
 const xray = process.env.LIFEVPN_XRAY
   || [path.join(__dirname, '..', 'resources', 'bin', process.platform === 'win32' ? 'xray.exe' : 'xray')]
@@ -328,12 +417,13 @@ if (xray) {
   const cases = [
     ['reality/tcp, глобально', Sample.realityTCP, global()],
     ['reality/xhttp, глобально', Sample.realityXHTTP, global()],
-    ['reality/tcp, свои домены', Sample.realityTCP, { ...global(), directDomains: ['mail.company.ru'] }]
+    ['reality/tcp, свои домены', Sample.realityTCP, { ...global(), directDomains: ['mail.example.com'] }],
+    ['tls/ws с закреплённым сертификатом', TLSSample, global()]
   ];
   for (const [name, link, routing] of cases) {
     check(`ядро принимает конфиг: ${name}`, () => {
       const file = path.join(dir, 'config.json');
-      fs.writeFileSync(file, Builder.makeJSON(LinkParser.parse(link), { routing }));
+      fs.writeFileSync(file, Builder.makeJSON(LinkParser.parse(link), { routing, accessLogPath: path.join(dir, 'access.log') }));
       execFileSync(xray, ['run', '-test', '-c', file], { stdio: 'pipe' });
     });
   }

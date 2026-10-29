@@ -32,6 +32,7 @@ module.exports = {
   appSupport,
   generatedConfig: () => file('config.json'),
   coreLog: () => file('xray.log'),
+  accessLog: () => file('access.log'),
   servers: () => file('servers.json'),
   settings: () => file('settings.json'),
   proxyState: () => file('proxy-state.json'),

@@ -42,7 +42,13 @@ function makeProxyConfig(fields = {}) {
     shortID: null,
     spiderX: null,
     alpn: [],
+    // Флаг из ссылки. В ядре с 26.9 параметр удалён — храним только чтобы
+    // не терять его при разборе старых ссылок.
     allowInsecure: false,
+    /** SHA-256 сертификата сервера (параметр ссылки `pcs`). */
+    pinnedPeerCertSha256: null,
+    /** Имя, по которому проверять сертификат (параметр ссылки `vcn`). */
+    verifyPeerCertByName: null,
     path: null,
     host: null,
     serviceName: null,
