@@ -1,7 +1,7 @@
 {
   "name": "lifevpn",
   "productName": "Life VPN",
-  "version": "3.1.5",
+  "version": "3.1.6",
   "description": "Life VPN — VPN-клиент для Windows на ядре Xray",
   "main": "src/main/main.js",
   "author": "stailegrow",
