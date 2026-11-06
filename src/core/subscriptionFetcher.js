@@ -21,8 +21,8 @@ async function fetchSubscription(urlString, { version = 'dev', timeout = 20000 }
   } catch (_) {
     url = null;
   }
-  if (!url || !['http:', 'https:'].includes(url.protocol)) {
-    throw new Error(t('Это не похоже на ссылку подписки.', 'This does not look like a subscription link.'));
+  if (!url || url.protocol !== 'https:') {
+    throw new Error(t('Для подписки нужна защищённая ссылка HTTPS.', 'A secure HTTPS subscription link is required.'));
   }
 
   let lastFailure = null;
@@ -41,6 +41,7 @@ async function fetchSubscription(urlString, { version = 'dev', timeout = 20000 }
 async function load(url, userAgent, timeout) {
   const { response, done } = await http.request(url, {
     route: 'system',
+    httpsOnly: true,
     headers: { 'User-Agent': userAgent },
     timeout
   });
@@ -50,7 +51,23 @@ async function load(url, userAgent, timeout) {
     }
     let body;
     try {
-      const buffer = Buffer.from(await response.arrayBuffer());
+      const limit = 8 * 1024 * 1024;
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Subscription response has no body');
+      const chunks = [];
+      let size = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > limit) throw new Error(t('Ответ подписки слишком большой.', 'Subscription response is too large.'));
+          chunks.push(Buffer.from(value));
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      const buffer = Buffer.concat(chunks, size);
       body = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
     } catch (error) {
       if (error && error.name === 'TypeError') {
@@ -81,8 +98,7 @@ async function load(url, userAgent, timeout) {
       payload.rawUserInfo = info;
       payload.userInfo = Parse.parseUserInfo(info);
     }
-    const days = parseFloat(header('profile-update-interval') || '');
-    if (days > 0) payload.updateIntervalHours = days * 24;
+    payload.updateIntervalHours = Parse.parseUpdateInterval(header('profile-update-interval')); 
     return payload;
   } finally {
     done();

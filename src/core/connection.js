@@ -12,6 +12,8 @@ const SpeedTester = require('./speedTester');
 const SystemProxy = require('./systemProxy');
 const { XrayProcess, readLog } = require('./xray');
 const { RoutingLog } = require('./routingLog');
+const { SessionTraffic, freePort } = require('./sessionTraffic');
+const { writeAtomic } = require('./atomic');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -38,19 +40,25 @@ class ConnectionManager extends EventEmitter {
     this.socksPort = 10808;
     this.httpPort = 10809;
     this.proxyApplied = false;
+    this.connectionGeneration = 0;
 
     /** Журнал маршрутизации текущей сессии. */
     this.routingLog = new RoutingLog();
     this.routingLog.on('change', () => this.emit('routing-log'));
 
+    this.traffic = new SessionTraffic();
+    this.traffic.on('change', () => this.changed());
     this.core = new XrayProcess();
     this.core.onUnexpectedExit = (code) => this.handleCoreCrash(code);
 
     // Прошлый запуск мог оставить системный прокси включённым.
     try {
       this.recoveredFromCrash = SystemProxy.cleanUpAfterCrash();
-    } catch (_) {
+    } catch (error) {
       this.recoveredFromCrash = false;
+      this.proxyApplied = true;
+      this.routingNotice = error.message;
+      this.state = { kind: 'failed', message: error.message };
     }
   }
 
@@ -62,7 +70,18 @@ class ConnectionManager extends EventEmitter {
   }
 
   async connect(server) {
-    if (this.isConnected || this.isBusy) await this.disconnect();
+    const generation = ++this.connectionGeneration;
+    // Журнал восстановления остался (сбой прошлой попытки или запуска) —
+    // сначала возвращаем прежние настройки, иначе новое подключение их затрёт.
+    if (this.isConnected || this.isBusy || this.proxyApplied || SystemProxy.hasPendingRecovery()) {
+      this.proxyApplied = this.proxyApplied || SystemProxy.hasPendingRecovery();
+      this.tearDown();
+      if (this.proxyApplied) {
+        this.state = { kind: 'failed', message: this.routingNotice || SystemProxy.recoveryFailure() };
+        this.changed();
+        return;
+      }
+    }
 
     this.socksPort = this.settings.get('socksPort');
     this.httpPort = this.settings.get('httpPort');
@@ -76,9 +95,14 @@ class ConnectionManager extends EventEmitter {
     this.changed();
 
     const routing = await this.resolvedRouting();
+    if (generation !== this.connectionGeneration) return;
 
     try {
+      const metricsPort = await freePort();
+      if (generation !== this.connectionGeneration) return;
+      this.traffic.reset(metricsPort);
       const json = Builder.makeJSON(server, {
+        metricsPort,
         socksPort: this.socksPort,
         httpPort: this.httpPort,
         logLevel: 'warning',
@@ -86,7 +110,7 @@ class ConnectionManager extends EventEmitter {
         accessLogPath: paths.accessLog(),
         routing
       });
-      fs.writeFileSync(paths.generatedConfig(), json);
+      writeAtomic(paths.generatedConfig(), json);
       this.routingLog.reset();
 
       this.core.start(paths.generatedConfig(), paths.coreLog());
@@ -94,22 +118,34 @@ class ConnectionManager extends EventEmitter {
       // Ядро с битым конфигом умирает почти мгновенно — ловим это здесь,
       // чтобы не успеть перевести систему на неработающий прокси.
       await sleep(700);
+      if (generation !== this.connectionGeneration) return;
       if (!this.core.isRunning) {
         throw exitedImmediately(1, readLog(paths.coreLog()));
       }
 
       const ip = await IPChecker.externalIP(this.httpPort);
+      if (generation !== this.connectionGeneration) return;
+      if (!this.core.isRunning) throw exitedImmediately(1, readLog(paths.coreLog()));
       if (!ip) throw noTunnel(readLog(paths.coreLog()));
 
-      SystemProxy.enable(this.socksPort, this.httpPort);
+      // Часть подключений может получить наш прокси ещё до того, как
+      // enable() вернёт ошибку, — считаем прокси тронутым заранее.
       this.proxyApplied = true;
+      try {
+        SystemProxy.enable(this.socksPort, this.httpPort);
+      } catch (error) {
+        this.proxyApplied = SystemProxy.hasPendingRecovery();
+        throw error;
+      }
 
       this.externalIP = ip;
       this.connectedSince = new Date().toISOString();
       this.state = { kind: 'connected' };
       this.routingLog.begin();
+      this.traffic.start();
       this.changed();
     } catch (error) {
+      if (generation !== this.connectionGeneration) return;
       this.tearDown();
       this.connectedSince = null;
       this.state = { kind: 'failed', message: error.message };
@@ -118,8 +154,11 @@ class ConnectionManager extends EventEmitter {
   }
 
   async disconnect() {
+    this.connectionGeneration++;
     this.tearDown();
-    this.state = { kind: 'disconnected' };
+    this.state = this.proxyApplied
+      ? { kind: 'failed', message: this.routingNotice || SystemProxy.recoveryFailure() }
+      : { kind: 'disconnected' };
     this.externalIP = null;
     this.connectedSince = null;
     this.speed = null;
@@ -137,11 +176,18 @@ class ConnectionManager extends EventEmitter {
 
   /** При выходе: системный прокси обязан быть снят. */
   shutdownSynchronously() {
-    if (this.proxyApplied) {
-      SystemProxy.disable();
-      this.proxyApplied = false;
+    this.connectionGeneration++;
+    this.traffic.stop();
+    try {
+      // Неудачное восстановление успешным не объявляется: журнал остаётся
+      // и будет применён при следующем запуске.
+      if (this.proxyApplied || SystemProxy.hasPendingRecovery()) {
+        try { SystemProxy.disable(); this.proxyApplied = false; }
+        catch (error) { this.routingNotice = error.message; }
+      }
+    } finally {
+      this.core.stop();
     }
-    this.core.stop();
   }
 
   /**
@@ -190,23 +236,30 @@ class ConnectionManager extends EventEmitter {
   }
 
   tearDown() {
+    this.traffic.stop();
     this.routingLog.end();
-    if (this.proxyApplied) {
-      try { SystemProxy.disable(); } catch (_) { /* сделали что могли */ }
-      this.proxyApplied = false;
+    try {
+      if (this.proxyApplied || SystemProxy.hasPendingRecovery()) {
+        try { SystemProxy.disable(); this.proxyApplied = false; }
+        catch (error) { this.proxyApplied = true; this.routingNotice = error.message; }
+      }
+    } finally {
+      this.core.stop();
     }
-    this.core.stop();
   }
 
   handleCoreCrash(code) {
+    this.traffic.stop();
     this.routingLog.end();
     if (!this.isConnected && !this.isBusy) return;
-    if (this.proxyApplied) {
-      try { SystemProxy.disable(); } catch (_) { /* сделали что могли */ }
-      this.proxyApplied = false;
+    if (this.proxyApplied || SystemProxy.hasPendingRecovery()) {
+      try { SystemProxy.disable(); this.proxyApplied = false; }
+      catch (error) { this.proxyApplied = true; this.routingNotice = error.message; }
     }
-    // На этапе подключения ошибку покажет сам connect — там полнее лог.
+    // На этапе подключения ошибку покажет сам connect — там полнее лог; он
+    // увидит, что ядро не работает, и не включит прокси в пустоту.
     if (this.isBusy) return;
+    this.connectionGeneration++;
     const log = readLog(paths.coreLog(), 8);
     this.externalIP = null;
     this.connectedSince = null;
@@ -230,7 +283,8 @@ class ConnectionManager extends EventEmitter {
       isPreparingRules: this.isPreparingRules,
       speed: this.speed,
       speedError: this.speedError,
-      isMeasuringSpeed: this.isMeasuringSpeed
+      isMeasuringSpeed: this.isMeasuringSpeed,
+      traffic: this.traffic.snapshot()
     };
   }
 }

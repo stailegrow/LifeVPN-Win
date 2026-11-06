@@ -251,6 +251,10 @@ export function StatsTab({ onNotice }) {
   const { palette: p, state, act } = useApp();
   const { store } = state;
   const totalUsed = store.subscriptions.reduce((sum, x) => sum + (x.usedBytes || 0), 0);
+  // Пока туннель поднят — трафик текущей сессии, без подключения — расход
+  // по подписке с панели, как в мак-версии.
+  const connected = state.connection.state.kind === 'connected';
+  const traffic = state.connection.traffic || { uplink: 0, downlink: 0, total: 0 };
   const scrollRef = useRef(null);
   const topRef = useRef(null);
   const [logHeight, setLogHeight] = useState(s(210));
@@ -277,8 +281,19 @@ export function StatsTab({ onNotice }) {
           <div class="row" style=${{ gap: px(s(14)), alignItems: 'stretch' }}>
             <${SpeedCard} />
             <${Card} title=${t('Трафик', 'Traffic')} fill>
-              <${BigBytes} bytes=${totalUsed} caption=${t('всего', 'total')} />
-              ${store.subscriptions.map((subscription) => html`
+              <${BigBytes} bytes=${connected ? traffic.total : totalUsed} caption=${connected ? t('за сессию', 'this session') : t('всего', 'total')} />
+              ${connected ? html`
+                <div class="row" style="gap:6px">
+                  <span style=${font('body', 11, { color: css(p.textSecondary) })}>${t('Скачано', 'Downloaded')}</span>
+                  <span class="spacer" />
+                  <span style=${font('code', 10, { color: css(p.textPrimary, 0.85), whiteSpace: 'nowrap' })}>${formatBytes(traffic.downlink)}</span>
+                </div>
+                <div class="row" style="gap:6px">
+                  <span style=${font('body', 11, { color: css(p.textSecondary) })}>${t('Отправлено', 'Uploaded')}</span>
+                  <span class="spacer" />
+                  <span style=${font('code', 10, { color: css(p.textPrimary, 0.85), whiteSpace: 'nowrap' })}>${formatBytes(traffic.uplink)}</span>
+                </div>
+                ${traffic.available === false && html`<span style=${font('body', 10.5, { color: css(p.textTertiary || p.textSecondary) })}>${t('Счётчики недоступны', 'Counters unavailable')}</span>`}` : store.subscriptions.map((subscription) => html`
                 <div class="row" style="gap:6px" key=${subscription.id}>
                   <span class="truncate" style=${font('body', 11, { color: css(p.textSecondary) })}>${subscription.displayName}</span>
                   <span class="spacer" />

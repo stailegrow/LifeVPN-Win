@@ -22,6 +22,9 @@ class LinkError extends Error {
       case 'missingUser': return t('В ссылке нет идентификатора пользователя.', 'The link has no user id.');
       case 'missingHost': return t('В ссылке нет адреса сервера.', 'The link has no server address.');
       case 'missingPort': return t('В ссылке нет порта.', 'The link has no port.');
+      case 'unsupportedSecurity':
+        return t(`Неизвестный тип защиты «${detail}» — узел пропущен, чтобы не подключаться без шифрования.`,
+          `Unknown security type "${detail}" — the node is skipped so it never connects unencrypted.`);
       default: return String(kind);
     }
   }
@@ -144,8 +147,12 @@ function parseVLESS(link) {
   config.encryption = q.encryption != null ? q.encryption : 'none';
   config.flow = nonEmpty(q.flow);
 
-  const security = (q.security != null ? q.security : 'none').toLowerCase();
-  config.security = SECURITIES.includes(security) ? security : 'none';
+  // Нет параметра (или он пустой) — по протоколу это none. Явно указанный,
+  // но неизвестный тип защиты не подменяется на none: такой узел мог бы
+  // подключиться без шифрования.
+  const security = (q.security ? String(q.security) : 'none').toLowerCase();
+  if (!SECURITIES.includes(security)) throw new LinkError('unsupportedSecurity', security);
+  config.security = security;
   const transport = normalizedTransport(q);
   config.transport = TRANSPORTS.includes(transport) ? transport : 'tcp';
 

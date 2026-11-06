@@ -46,22 +46,54 @@ async function sessionFor(route) {
  * fetch с тайм-аутом. `timeout` — на весь запрос, пока не пришли
  * заголовки; тело читает вызывающий.
  */
-async function request(url, { route = 'system', headers = {}, timeout = 20000, signal } = {}) {
+async function request(url, { route = 'system', headers = {}, timeout = 20000, signal, httpsOnly = false, maxRedirects = 5 } = {}) {
+  const { t } = require('./l10n');
+  // В режиме httpsOnly (подписки) каждый адрес цепочки проверяется ДО
+  // отправки запроса: HTTPS → HTTP не уходит в сеть вовсе.
+  const secure = (value) => {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'https:' || !parsed.hostname) {
+      throw new Error(t('Для подписки нужна защищённая ссылка HTTPS — запрос по незащищённому адресу не отправлен.',
+        'A secure HTTPS subscription link is required — no request was sent to the insecure address.'));
+    }
+    return parsed.toString();
+  };
+  let current = httpsOnly ? secure(url) : url;
   const ses = await sessionFor(route);
   const controller = new AbortController();
+  // Срок общий на всю цепочку перенаправлений и не обнуляется на каждом шаге.
   const timer = setTimeout(() => controller.abort(new Error('timeout')), timeout);
-  if (signal) signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
-  try {
-    const response = await ses.fetch(url, {
-      headers: { 'Cache-Control': 'no-cache', ...headers },
-      signal: controller.signal,
-      cache: 'no-store',
-      redirect: 'follow',
-      bypassCustomProtocolHandlers: true
-    });
-    return { response, controller, done: () => clearTimeout(timer) };
-  } catch (error) {
+  const onAbort = () => controller.abort(signal.reason);
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const release = () => {
     clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
+  };
+  try {
+    for (let redirects = 0; ; redirects++) {
+      const response = await ses.fetch(current, {
+        headers: { 'Cache-Control': 'no-cache', ...headers },
+        signal: controller.signal,
+        cache: 'no-store',
+        redirect: httpsOnly ? 'manual' : 'follow',
+        bypassCustomProtocolHandlers: true
+      });
+      if (!httpsOnly || ![301, 302, 303, 307, 308].includes(response.status)) {
+        return { response, controller, done: release };
+      }
+      // Тело промежуточного ответа не нужно — освобождаем соединение.
+      try { await response.body?.cancel(); } catch (_) { /* уже закрыто */ }
+      const location = response.headers.get('location');
+      if (!location) throw new Error(t('Сервер подписки прислал перенаправление без адреса.', 'The subscription server sent a redirect without an address.'));
+      if (redirects >= maxRedirects) throw new Error(t('Слишком много перенаправлений при загрузке подписки.', 'Too many redirects while loading the subscription.'));
+      current = secure(new URL(location, current).toString());
+    }
+  } catch (error) {
+    controller.abort();
+    release();
     throw normalizeError(error);
   }
 }

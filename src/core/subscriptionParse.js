@@ -6,10 +6,23 @@
  */
 
 function links(text) {
-  return String(text)
-    .split(/\r\n|\r|\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#') && line.includes('://'));
+  text = String(text);
+  const result = [];
+  let start = 0;
+  for (let i = 0; i <= text.length; i++) {
+    if (i < text.length && text[i] !== '\r' && text[i] !== '\n') continue;
+    const line = text.slice(start, i).trim();
+    if (line && !line.startsWith('#') && line.includes('://')) {
+      if (result.length >= 10000) {
+        const { t } = require('./l10n');
+        throw new Error(t('В подписке слишком много ссылок.', 'Subscription contains too many links.'));
+      }
+      result.push(line);
+    }
+    if (text[i] === '\r' && text[i + 1] === '\n') i++;
+    start = i + 1;
+  }
+  return result;
 }
 
 function decodeBase64(value) {
@@ -47,25 +60,35 @@ function decodeHeaderValue(value) {
 
 /** `upload=1; download=2; total=3; expire=1767225600` */
 function parseUserInfo(value) {
-  const fields = {};
+  const fields = Object.create(null);
   for (const pair of String(value).split(';')) {
     const index = pair.indexOf('=');
     if (index < 0) continue;
     const key = pair.slice(0, index).trim().toLowerCase();
     const raw = pair.slice(index + 1).trim();
-    if (/^-?\d+$/.test(raw)) fields[key] = Number(raw);
+    const number = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    fields[key] = Number.isSafeInteger(number) ? number : null;
   }
-
   const info = { used: null, total: null, expiresAt: null };
-  if (fields.upload != null || fields.download != null) {
-    info.used = (fields.upload || 0) + (fields.download || 0);
+  const has = key => Object.hasOwn(fields, key);
+  if (has('upload') || has('download')) {
+    const up = has('upload') ? fields.upload : 0;
+    const down = has('download') ? fields.download : 0;
+    if (up !== null && down !== null && Number.isSafeInteger(up + down)) info.used = up + down;
   }
   if (fields.total != null) info.total = fields.total;
-  // expire=0 у панелей означает «бессрочно», а не 1970 год.
-  if (fields.expire != null && fields.expire > 0) {
-    info.expiresAt = new Date(fields.expire * 1000).toISOString();
+  if (fields.expire > 0) {
+    const date = new Date(fields.expire * 1000);
+    if (Number.isFinite(date.getTime())) info.expiresAt = date.toISOString();
   }
   return info;
 }
 
-module.exports = { decodeBody, decodeBase64, decodeHeaderValue, parseUserInfo };
+function parseUpdateInterval(value) {
+  if (value == null || !String(value).trim()) return null;
+  const days = Number(value);
+  const hours = days * 24;
+  return days > 0 && Number.isFinite(hours * 3600000) && hours > 0 ? hours : null;
+}
+
+module.exports = { decodeBody, decodeBase64, decodeHeaderValue, parseUserInfo, parseUpdateInterval };

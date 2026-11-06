@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const http = require('./http');
 const { t } = require('./l10n');
 
@@ -24,6 +25,44 @@ const { t } = require('./l10n');
 
 const REPOSITORY = 'stailegrow/LifeVPN-Win';
 const RELEASES_PAGE = `https://github.com/${REPOSITORY}/releases`;
+const PRODUCT = 'lifevpn-windows';
+
+/**
+ * Подпись обновлений ключом издателя Life VPN (Ed25519).
+ *
+ * Установщик не подписан Authenticode, а контрольная сумма из того же
+ * релиза от подмены релиза не защищает. Поэтому автоматически ставится
+ * только установщик, подписанный ключом, закреплённым в этой программе;
+ * ключ, пришедший вместе с обновлением, доверием не считается.
+ * Подписывается строка `LifeVPN-update-v1\n<продукт>\n<версия>\n<sha256>\n`.
+ */
+const UPDATE_PUBLIC_KEY = 'z96lge0uLd3Kmr/kGidg+hI9cH0f5IblP3ukfi32VHs=';
+
+function signedMessage(product, version, sha256) {
+  return Buffer.from(`LifeVPN-update-v1\n${product}\n${version}\n${String(sha256).toLowerCase()}\n`, 'utf8');
+}
+
+function verifySignature(signature, { product = PRODUCT, version, sha256, publicKey = UPDATE_PUBLIC_KEY }) {
+  try {
+    const raw = Buffer.from(publicKey, 'base64');
+    if (raw.length !== 32) return false;
+    const key = crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: raw.toString('base64url') }, format: 'jwk' });
+    return crypto.verify(null, signedMessage(product, version, sha256), key, signature);
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Скачиваем только файлы релизов нашего репозитория и только по https. */
+function isOwnReleaseAsset(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && parsed.hostname === 'github.com' &&
+      parsed.pathname.startsWith(`/${REPOSITORY}/releases/download/`);
+  } catch (_) {
+    return false;
+  }
+}
 
 /** Сравнение «2.10.0» > «2.9.3» по числам, а не по строкам. */
 function isNewer(candidate, current) {
@@ -115,8 +154,15 @@ class Updater extends EventEmitter {
         this.set({ kind: 'upToDate' });
         return;
       }
+      const sigAsset = assets.find((a) => a.name === `${asset.name}.sig`);
+      if (!isOwnReleaseAsset(asset.browser_download_url)) {
+        this.latest = null;
+        this.set({ kind: 'upToDate' });
+        return;
+      }
       if (isNewer(version, this.version)) {
         this.latest = {
+          signature: sigAsset && isOwnReleaseAsset(sigAsset.browser_download_url) ? sigAsset.browser_download_url : null,
           version,
           notes: payload.body || '',
           page: payload.html_url || RELEASES_PAGE,
@@ -151,11 +197,30 @@ class Updater extends EventEmitter {
       return;
     }
 
+    if (!release.signature) {
+      openExternal(release.page);
+      this.set({
+        kind: 'failed',
+        message: t('У релиза нет подписи издателя — автоматическая установка отключена. Страница релиза открыта в браузере.',
+          'The release has no publisher signature — automatic install is disabled. The release page opened in the browser.')
+      });
+      return;
+    }
+
+    let work = null;
     try {
       this.set({ kind: 'downloading', fraction: 0 });
-      const work = fs.mkdtempSync(path.join(os.tmpdir(), 'LifeVPN-update-'));
+      work = fs.mkdtempSync(path.join(os.tmpdir(), 'LifeVPN-update-'));
       const target = path.join(work, release.name.replace(/[^\w.-]/g, '_'));
       await this.download(release.installer, target, release.size);
+
+      // Подпись издателя: без неё установщик не запускаем.
+      const signature = await this.fetchSmall(release.signature);
+      const sha256 = await sha256File(target);
+      if (!verifySignature(signature, { version: release.version, sha256 })) {
+        throw new Error(t('подпись издателя не прошла проверку — обновление не установлено',
+          'the publisher signature did not verify — the update was not installed'));
+      }
 
       // Простейшая проверка, что пришёл исполняемый файл, а не страница ошибки.
       const head = Buffer.alloc(2);
@@ -168,17 +233,39 @@ class Updater extends EventEmitter {
 
       this.set({ kind: 'installing' });
       this.launchSwap(target, work);
+      work = null;
       // Выход штатный: снимается системный прокси, останавливается ядро.
       setTimeout(() => this.onQuit(), 400);
     } catch (error) {
+      if (work) fs.rm(work, { recursive: true, force: true }, () => {});
       this.set({ kind: 'failed', message: error.message });
+    }
+  }
+
+  /** Маленький файл релиза (подпись): только https, не больше 4 КиБ. */
+  async fetchSmall(url) {
+    const { response, done } = await http.request(url, {
+      httpsOnly: true,
+      headers: { 'User-Agent': `LifeVPN/${this.version}` },
+      timeout: 30000
+    });
+    try {
+      if (response.status !== 200) throw new Error(t(`сервер ответил кодом ${response.status}`, `the server answered with code ${response.status}`));
+      const text = Buffer.from(await response.arrayBuffer());
+      if (text.length > 4096) throw new Error(t('файл подписи слишком большой', 'the signature file is too large'));
+      const signature = Buffer.from(text.toString('utf8').trim(), 'base64');
+      if (signature.length !== 64) throw new Error(t('файл подписи повреждён', 'the signature file is damaged'));
+      return signature;
+    } finally {
+      done();
     }
   }
 
   async download(url, target, expected) {
     const { response, done } = await http.request(url, {
+      httpsOnly: true,
       headers: { 'User-Agent': `LifeVPN/${this.version}` },
-      timeout: 60000
+      timeout: 10 * 60000
     });
     try {
       if (response.status !== 200) {
@@ -193,6 +280,11 @@ class Updater extends EventEmitter {
         const { done: finished, value } = await reader.read();
         if (finished) break;
         received += value.length;
+        // Больше, чем объявлено в релизе, не принимаем.
+        if (expected > 0 && received > expected) {
+          out.destroy();
+          throw new Error(t('файл больше, чем объявлено в релизе', 'the file is larger than the release declares'));
+        }
         if (!out.write(Buffer.from(value))) await new Promise((r) => out.once('drain', r));
         const now = Date.now();
         if (total > 0 && now - lastEmit > 150) {
@@ -237,4 +329,11 @@ class Updater extends EventEmitter {
   }
 }
 
-module.exports = { Updater, isNewer, REPOSITORY, RELEASES_PAGE };
+function sha256File(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    fs.createReadStream(file).on('error', reject).on('data', (chunk) => hash.update(chunk)).on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+module.exports = { Updater, isNewer, REPOSITORY, RELEASES_PAGE, verifySignature, signedMessage, isOwnReleaseAsset, PRODUCT };

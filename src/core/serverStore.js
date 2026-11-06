@@ -171,7 +171,16 @@ class ServerStore extends EventEmitter {
 
     try {
       const payload = await fetchSubscription(stored.url, { version: this.version });
-      const parsed = LinkParser.parseMany(payload.links.join('\n')).configs;
+      // Пока шла загрузка, подписку могли удалить — её узлы не возвращаем.
+      if (!this.subscriptions.some((s) => s.id === id)) return false;
+      const parsedResult = LinkParser.parseMany(payload.links.join('\n'));
+      const parsed = parsedResult.configs;
+      // Ни одна ссылка не распозналась — ошибка, а не пустая подписка:
+      // прежние узлы сохраняем.
+      if (!parsed.length) {
+        throw new Error((parsedResult.errors && parsedResult.errors[0]) ||
+          t('Ссылки подписки не распознались — прежние узлы сохранены.', 'The subscription links were not recognised — existing nodes are kept.'));
+      }
       const result = merge(this.servers, parsed, stored.id);
       this.servers = result.servers;
 

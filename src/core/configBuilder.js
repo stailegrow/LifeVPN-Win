@@ -17,6 +17,7 @@ function defaultOptions(overrides = {}) {
     logPath: null,
     // Журнал соединений: куда ушло каждое — туннель, напрямую, блок.
     accessLogPath: null,
+    metricsPort: null,
     routing: models.PRESETS.find((p) => p.id === 'global').make(),
     ...overrides
   };
@@ -52,6 +53,11 @@ function makeTree(config, options = {}) {
     outbounds: [outbound(config), directOutbound(), blockOutbound()],
     routing: routing(opts.routing)
   };
+  if (opts.metricsPort) {
+    root.stats = {};
+    root.policy = { system: { statsOutboundUplink: true, statsOutboundDownlink: true } };
+    root.metrics = { tag: 'metrics', listen: `127.0.0.1:${opts.metricsPort}` };
+  }
   const dnsBlock = dns(opts.routing);
   if (dnsBlock) root.dns = dnsBlock;
   return root;

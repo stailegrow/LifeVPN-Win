@@ -60,6 +60,18 @@ paths.setRoot(Demo.isOn()
   : path.join(app.getPath('appData'), 'LifeVPN'));
 app.setPath('userData', path.join(app.getPath('appData'), 'LifeVPN', 'Chromium'));
 
+// Каталог с узлами и ключами закрываем до первого чтения из него. Не вышло —
+// не запускаемся: продолжать с небезопасным каталогом нельзя, а удалять
+// профиль пользователя — тем более.
+try {
+  paths.secureRoot();
+} catch (error) {
+  dialog.showErrorBox(t('Не удалось защитить данные Life VPN', 'Could not secure Life VPN data'),
+    `${error && error.message}\n\n${paths.appSupport()}`);
+  app.exit(1);
+  process.exit(1);
+}
+
 Xray.setBinary(process.env.LIFEVPN_XRAY || resource('bin', process.platform === 'win32' ? 'xray.exe' : 'xray'));
 SystemProxy.setHelper(resource('bin', 'lifevpn-proxy.exe'));
 

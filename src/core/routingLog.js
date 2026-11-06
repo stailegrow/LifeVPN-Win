@@ -18,9 +18,14 @@ const { t } = require('./l10n');
 const ROUTES = ['proxy', 'direct', 'block', 'other'];
 
 const SHOWN_LIMIT = 400;
-/** Выше этого размера файл обнуляется: журнал нужен, чтобы видеть текущие
- *  маршруты, а не хранить историю за недели. */
+/** Выше этого размера файл ротируется: текущая часть переносится в
+ *  access.log.1 (прежняя такая часть заменяется), а access.log начинается
+ *  заново. Итого на диске не больше двух частей — около 16 МиБ — за сессию;
+ *  при новом подключении обе части удаляются. Обрезка происходит только
+ *  после того, как всё уже записанное прочитано и посчитано, поэтому события
+ *  не теряются молча; в отчёт попадают обе части. */
 const FILE_LIMIT = 8 * 1024 * 1024;
+const rotated = () => `${paths.accessLog()}.1`;
 const CHUNK_LIMIT = 1024 * 1024;
 
 function routeOf(tag) {
@@ -108,6 +113,8 @@ class RoutingLog extends EventEmitter {
   reset() {
     this.end();
     try { fs.rmSync(paths.accessLog(), { force: true }); } catch (_) { /* занят — обнулится сам */ }
+    try { fs.rmSync(rotated(), { force: true }); } catch (_) { /* нет файла */ }
+    this.rotations = 0;
     this.offset = 0;
     this.pending = '';
     this.entries = [];
@@ -136,12 +143,17 @@ class RoutingLog extends EventEmitter {
     try {
       const size = fs.fstatSync(fd).size;
       if (size < this.offset) { this.offset = 0; this.pending = ''; } // файл обнулили
-      if (size > FILE_LIMIT) {
-        // Ядро пишет в режиме дозаписи, поэтому обрезка безопасна:
+      if (size > FILE_LIMIT && this.offset >= size) {
+        // Всё записанное уже прочитано — переносим часть в access.log.1 и
+        // начинаем файл заново. Ядро пишет в режиме дозаписи, поэтому
         // следующая строка просто ляжет в начало пустого файла.
-        try { fs.truncateSync(file, 0); } catch (_) { /* занят — попробуем в следующий раз */ }
-        this.offset = 0;
-        this.pending = '';
+        try {
+          fs.copyFileSync(file, rotated());
+          fs.truncateSync(file, 0);
+          this.rotations = (this.rotations || 0) + 1;
+          this.offset = 0;
+          this.pending = '';
+        } catch (_) { /* занят — попробуем в следующий раз */ }
         return;
       }
       if (size <= this.offset) return;
@@ -184,13 +196,15 @@ class RoutingLog extends EventEmitter {
   report(now = new Date()) {
     this.poll();
     let all = [];
-    try {
-      const text = fs.readFileSync(paths.accessLog(), 'utf8');
-      for (const line of text.split('\n')) {
-        const entry = parseLine(line);
-        if (entry) all.push(entry);
-      }
-    } catch (_) { /* файла нет */ }
+    for (const file of [rotated(), paths.accessLog()]) {
+      try {
+        const text = fs.readFileSync(file, 'utf8');
+        for (const line of text.split('\n')) {
+          const entry = parseLine(line);
+          if (entry) all.push(entry);
+        }
+      } catch (_) { /* файла нет */ }
+    }
     if (!all.length) all = this.entries.slice().reverse();
 
     const two = (v) => String(v).padStart(2, '0');
