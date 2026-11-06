@@ -113,7 +113,8 @@ class Updater extends EventEmitter {
       await this.check();
       this.timer = setTimeout(loop, 6 * 3600 * 1000);
     };
-    this.timer = setTimeout(loop, 30 * 1000);
+    // Сразу при запуске — чтобы ещё до подключения было видно, что нужно обновиться.
+    this.timer = setTimeout(loop, 1000);
   }
 
   async check() {

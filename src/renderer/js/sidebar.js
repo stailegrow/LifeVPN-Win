@@ -21,6 +21,7 @@ export const TABS = [
   { id: 'servers', icon: 'server.outline', title: () => t('Узлы', 'Nodes') },
   { id: 'routing', icon: 'arrow.up.arrow.down', title: () => t('Маршрутизация', 'Routing') },
   { id: 'stats', icon: 'chart.bar', title: () => t('Статистика', 'Statistics') },
+  { id: 'logs', icon: 'doc.text', title: () => t('Журнал', 'Logs') },
   { id: 'settings', icon: 'gearshape', title: () => t('Настройки', 'Settings') }
 ];
 const tabInfo = (id) => TABS.find((x) => x.id === id);
@@ -133,7 +134,7 @@ export function Sidebar({ tab, onTab, collapsed, onToggleCollapse, onFocusSearch
       <div class="side-scroll">
         <div class="col side-nav" ref=${navRef}>
           <div class="side-highlight" ref=${highlightRef} />
-          ${section(t('Меню', 'Menu'), html`${navRow('home')}${navRow('servers')}${navRow('routing')}${navRow('stats')}`)}
+          ${section(t('Меню', 'Menu'), html`${navRow('home')}${navRow('servers')}${navRow('routing')}${navRow('stats')}${navRow('logs')}`)}
           ${section(t('Общее', 'General'), html`
             ${navRow('settings')}
             <button class="side-row danger" onClick=${() => act('quit')} title=${collapsed ? t('Выход', 'Quit') : ''} style=${font('heading', 11.5)}>

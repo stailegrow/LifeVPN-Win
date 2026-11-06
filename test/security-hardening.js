@@ -35,16 +35,21 @@ try {
   assert.ok(!icacls[0].some((a) => /Everyone|\*S-1-1-0/i.test(a)), 'Everyone не получает доступа');
   assert.deepEqual(icacls[1], [target, '/reset', '/q']);
   paths.secureRoot({ platform: 'linux' });
-  assert.equal(fs.statSync(root).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(root).mode & 0o777, 0o700);
 
   const hard = path.join(root, 'outside-link');
   fs.linkSync(target, hard);
   assert.throws(() => paths.secureRoot({ platform: 'linux' }), /hard links/);
   fs.unlinkSync(hard);
   fs.unlinkSync(target);
-  fs.symlinkSync(path.join(root, 'elsewhere'), target);
-  assert.throws(() => paths.secureRoot({ platform: 'linux' }), /Unsafe/);
-  fs.unlinkSync(target);
+  // На Windows символическая ссылка требует прав разработчика — там часть
+  // проверки пропускается, если создать ссылку нельзя.
+  let linked = true;
+  try { fs.symlinkSync(path.join(root, 'elsewhere'), target); } catch (error) { if (process.platform === 'win32') linked = false; else throw error; }
+  if (linked) {
+    assert.throws(() => paths.secureRoot({ platform: 'linux' }), /Unsafe/);
+    fs.unlinkSync(target);
+  }
 
   // --- Подпись обновлений.
   const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');

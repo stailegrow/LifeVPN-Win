@@ -54,8 +54,24 @@ export function HomeTab({ onAddSubscription, onPaste }) {
     return list.length ? list : store.servers;
   })();
 
+  const u = state.updater;
+  const updateBanner = u && u.hasUpdate && u.latest && html`
+    <div class="inline-note" style=${{ background: css(p.accentStart, 0.12), boxShadow: `inset 0 0 0 1px ${css(p.accentStart, 0.35)}`, alignItems: 'center' }}>
+      <${Icon} name="arrow.down.circle" size=${s(14) * 1.3} style=${{ color: css(p.accentStart) }} />
+      <div class="col" style=${{ flex: '1 1 auto', gap: '2px' }}>
+        <span style=${font('label', 12, { color: css(p.textPrimary) })}>${t('Необходимо обновить приложение', 'Please update the app')}</span>
+        <span style=${font('body', 10.5, { color: css(p.textSecondary) })}>${
+          u.phase.kind === 'downloading' ? t(`Скачиваю версию ${u.latest.version}… ${Math.round((u.phase.fraction || 0) * 100)}%`, `Downloading version ${u.latest.version}… ${Math.round((u.phase.fraction || 0) * 100)}%`)
+          : u.phase.kind === 'installing' ? t(`Устанавливаю версию ${u.latest.version}…`, `Installing version ${u.latest.version}…`)
+          : u.phase.kind === 'failed' ? u.phase.message
+          : t(`Доступна версия ${u.latest.version}, у вас ${state.version}.`, `Version ${u.latest.version} is available, you have ${state.version}.`)}</span>
+      </div>
+      ${u.phase.kind === 'available' && html`<${AccentButton} onClick=${() => act('installUpdate')}>${t('Обновить', 'Update')}<//>`}
+    </div>`;
+
   return html`
     <${Scroll}>
+      ${updateBanner}
       ${c.isPreparingRules && html`<${InlineNote} icon="arrow.down.circle" tint=${p.warn}
           text=${t('Загружаю базы правил маршрутизации…', 'Loading the routing databases…')} />`}
       ${c.routingNotice && html`<${InlineNote} icon="exclamationmark.circle" tint=${p.warn} text=${c.routingNotice} />`}
@@ -247,7 +263,7 @@ export function RoutingTab({ onEditDomains }) {
 // журнал маршрутизации на всё оставшееся место окна.
 // ---------------------------------------------------------------------------
 
-export function StatsTab({ onNotice }) {
+export function StatsTab() {
   const { palette: p, state, act } = useApp();
   const { store } = state;
   const totalUsed = store.subscriptions.reduce((sum, x) => sum + (x.usedBytes || 0), 0);
@@ -255,29 +271,15 @@ export function StatsTab({ onNotice }) {
   // по подписке с панели, как в мак-версии.
   const connected = state.connection.state.kind === 'connected';
   const traffic = state.connection.traffic || { uplink: 0, downlink: 0, total: 0 };
-  const scrollRef = useRef(null);
-  const topRef = useRef(null);
-  const [logHeight, setLogHeight] = useState(s(210));
 
   useEffect(() => {
     act('startAutoPing');
     return () => act('stopAutoPing');
   }, []);
 
-  // Журнал занимает всё оставшееся место окна, но не меньше пары десятков
-  // строк — при длинном списке узлов экран просто прокручивается.
-  useLayoutEffect(() => {
-    const scroll = scrollRef.current;
-    const top = topRef.current;
-    if (!scroll || !top) return;
-    const next = Math.max(s(210), scroll.clientHeight - top.offsetHeight - s(28));
-    if (Math.abs(next - logHeight) > 1) setLogHeight(next);
-  });
-
   return html`
-    <div class="scroll" ref=${scrollRef}>
+    <div class="scroll">
       <div class="stack" style=${{ padding: `0 ${px(Metrics.gutter)} ${px(s(14))}`, gap: px(s(14)) }}>
-        <div class="stack" ref=${topRef} style=${{ gap: px(s(14)) }}>
           <div class="row" style=${{ gap: px(s(14)), alignItems: 'stretch' }}>
             <${SpeedCard} />
             <${Card} title=${t('Трафик', 'Traffic')} fill>
@@ -306,9 +308,18 @@ export function StatsTab({ onNotice }) {
                 <span style=${font('body', 11.5, { color: css(p.textSecondary) })}>${t('Узлов пока нет — добавьте подписку.', 'No nodes yet — add a subscription.')}</span>
               <//>`
             : html`<${LatencyCard} servers=${store.servers} />`}
-        </div>
-        <${RoutingLogCard} style=${{ height: px(logHeight) }} onNotice=${onNotice} />
       </div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Журнал — отдельная вкладка: журнал маршрутизации на всё место окна.
+// ---------------------------------------------------------------------------
+
+export function LogsTab({ onNotice }) {
+  return html`
+    <div class="logs-page" style=${{ display: 'flex', flexDirection: 'column', height: '100%', padding: `0 ${px(Metrics.gutter)} ${px(s(14))}`, boxSizing: 'border-box' }}>
+      <${RoutingLogCard} onNotice=${onNotice} style=${{ flex: '1 1 auto', minHeight: 0, height: '100%' }} />
     </div>`;
 }
 

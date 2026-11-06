@@ -5,7 +5,7 @@ import { Icon } from './icons.js';
 import { AppContext, font, px, MenuPanel, NoticeBanner } from './ui.js';
 import { ObsidianBackground, LaunchSplash, SPLASH_DURATION } from './widgets.js';
 import { Sidebar, TABS, sidebarWidth } from './sidebar.js';
-import { HomeTab, ServersTab, RoutingTab, StatsTab, SettingsTab } from './screens.js';
+import { HomeTab, ServersTab, RoutingTab, StatsTab, LogsTab, SettingsTab } from './screens.js';
 import { AddSheet, RenameSheet, DirectDomainsSheet, QRScannerSheet, decodeImage } from './sheets.js';
 import { palette as paletteOf, cssVariables, css, s, Metrics } from './theme.js';
 import { t, setLanguage } from './i18n.js';
@@ -48,6 +48,9 @@ function PageHeader({ tab, search, state, p }) {
       break;
     case 'stats':
       subtitle = t('Скорость, трафик и история задержки', 'Speed, traffic and latency history');
+      break;
+    case 'logs':
+      subtitle = t('Соединения, маршруты и журнал сессии', 'Connections, routes and session log');
       break;
     default:
       subtitle = t('Тема, язык и поведение', 'Theme, language and behaviour');
@@ -234,6 +237,7 @@ function Root({ initial }) {
               ${tab === 'servers' && html`<${ServersTab} query=${search} />`}
               ${tab === 'routing' && html`<${RoutingTab} onEditDomains=${() => setSheet({ kind: 'domains' })} />`}
               ${tab === 'stats' && html`<${StatsTab} onNotice=${show} />`}
+              ${tab === 'logs' && html`<${LogsTab} onNotice=${show} />`}
               ${tab === 'settings' && html`<${SettingsTab} />`}
             </div>
             ${notice && html`<${NoticeBanner} key=${notice.key} text=${notice.text} isError=${notice.isError} leaving=${notice.leaving} />`}

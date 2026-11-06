@@ -48,6 +48,7 @@ module.exports = function shots(getWindow, app, extras) {
       await extras.speed();
       await capture('07-stats', 1900);
     }
+    if (want('logs')) { await tab('logs'); await capture('07b-logs'); }
     if (want('settings')) {
       await tab('settings');
       await capture('08-settings');
