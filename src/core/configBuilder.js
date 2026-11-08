@@ -17,7 +17,13 @@ function defaultOptions(overrides = {}) {
     logPath: null,
     // Журнал соединений: куда ушло каждое — туннель, напрямую, блок.
     accessLogPath: null,
-    metricsPort: null,
+    // Счётчики трафика. Порта ядро не открывает: эндпоинт metrics доступен
+    // только как outbound «metrics» по служебному имени METRICS_HOST через
+    // наш же HTTP-прокси и только процессу самой программы (selfProcess).
+    metrics: false,
+    selfProcess: [],
+    // Программы, которые идут мимо туннеля (MAX и подобные, см. models.js).
+    isolatedProcesses: [],
     routing: models.PRESETS.find((p) => p.id === 'global').make(),
     ...overrides
   };
@@ -51,12 +57,14 @@ function makeTree(config, options = {}) {
     log,
     inbounds: inbounds(opts),
     outbounds: [outbound(config), directOutbound(), blockOutbound()],
-    routing: routing(opts.routing)
+    routing: routing(opts.routing, opts)
   };
-  if (opts.metricsPort) {
+  if (opts.metrics) {
     root.stats = {};
     root.policy = { system: { statsOutboundUplink: true, statsOutboundDownlink: true } };
-    root.metrics = { tag: 'metrics', listen: `127.0.0.1:${opts.metricsPort}` };
+    // Без listen: отдельного порта на 127.0.0.1 нет, иначе любая программа
+    // на компьютере видит работающий Xray, объём трафика и /debug/pprof.
+    root.metrics = { tag: 'metrics' };
   }
   const dnsBlock = dns(opts.routing);
   if (dnsBlock) root.dns = dnsBlock;
@@ -130,8 +138,26 @@ const PRIVATE_RANGES = [
  * побеждает; всё, что не совпало ни с чем, уходит в первый outbound —
  * то есть в туннель.
  */
-function routing(config) {
+const METRICS_HOST = 'metrics.lifevpn.internal';
+
+function routing(config, extra = {}) {
   const rules = [];
+
+  // Счётчики — только своему процессу; всем остальным это имя закрыто.
+  if (extra.metrics) {
+    const self = (extra.selfProcess || []).filter(Boolean);
+    if (self.length) {
+      rules.push({ type: 'field', domain: [`full:${METRICS_HOST}`], process: self.slice(), outboundTag: 'metrics' });
+    }
+    rules.push({ type: 'field', domain: [`full:${METRICS_HOST}`], outboundTag: 'block' });
+  }
+
+  // Изолированные программы (MAX и т.п.) — напрямую, раньше любых правил:
+  // их проверки внешнего IP не должны видеть адрес VPN-сервера.
+  const isolated = (extra.isolatedProcesses || []).filter(Boolean);
+  if (isolated.length) {
+    rules.push({ type: 'field', process: isolated.slice(), outboundTag: 'direct' });
+  }
 
   // QUIC мимо туннеля не ходит: канал всегда поверх TCP, а ретрансляция
   // UDP-443 через него ненадёжна. Блокируем явно и первым правилом.
@@ -282,6 +308,7 @@ module.exports = {
   makeJSON,
   makeTree,
   routing,
+  METRICS_HOST,
   dns,
   outbound,
   streamSettings,

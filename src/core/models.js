@@ -268,7 +268,27 @@ function preset(id) {
   return PRESETS.find((p) => p.id === id) || null;
 }
 
+/**
+ * Программы, которые в «Обходе РФ» идут мимо туннеля (переключатель
+ * «Изолировать российские программы», включён по умолчанию).
+ *
+ * MAX проверяет внешний IP через несколько сервисов и сравнивает ответы —
+ * так находят личный VPN-сервер и связывают его адрес с человеком. Ядро
+ * узнаёт программу по процессу, который открыл соединение с нашим прокси,
+ * и отправляет её трафик напрямую: адрес сервера ей не виден.
+ * Имена — без .exe, как их сравнивает Xray-core.
+ */
+const ISOLATED_PROCESSES = ['MAX', 'Max', 'max'];
+
+function isolatedProcessesFor(settings, routing) {
+  if (!routing || routing.presetID !== 'bypass-ru') return [];
+  if (settings && settings.isolateRuApps === false) return [];
+  return ISOLATED_PROCESSES.slice();
+}
+
 module.exports = {
+  ISOLATED_PROCESSES,
+  isolatedProcessesFor,
   TRANSPORTS,
   SECURITIES,
   transportSettingsKey,

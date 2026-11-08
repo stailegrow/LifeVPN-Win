@@ -12,7 +12,7 @@ const SpeedTester = require('./speedTester');
 const SystemProxy = require('./systemProxy');
 const { XrayProcess, readLog } = require('./xray');
 const { RoutingLog } = require('./routingLog');
-const { SessionTraffic, freePort } = require('./sessionTraffic');
+const { SessionTraffic } = require('./sessionTraffic');
 const { writeAtomic } = require('./atomic');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -98,11 +98,12 @@ class ConnectionManager extends EventEmitter {
     if (generation !== this.connectionGeneration) return;
 
     try {
-      const metricsPort = await freePort();
-      if (generation !== this.connectionGeneration) return;
-      this.traffic.reset(metricsPort);
+      this.traffic.reset(this.httpPort);
       const json = Builder.makeJSON(server, {
-        metricsPort,
+        metrics: true,
+        // Счётчики отдаём только своему процессу (путь к exe и его имя).
+        selfProcess: [process.execPath, require('path').basename(process.execPath)],
+        isolatedProcesses: models.isolatedProcessesFor({ isolateRuApps: this.settings.get('isolateRuApps') }, routing),
         socksPort: this.socksPort,
         httpPort: this.httpPort,
         logLevel: 'warning',

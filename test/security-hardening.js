@@ -80,9 +80,9 @@ try {
   assert.equal(many.errors.length, 1);
 
   // --- Слушатели только на 127.0.0.1.
-  const tree = Builder.makeTree(Parser.parse(base), { metricsPort: 5555 });
+  const tree = Builder.makeTree(Parser.parse(base), { metrics: true, selfProcess: ['Life VPN.exe'] });
   for (const inbound of tree.inbounds) assert.equal(inbound.listen, '127.0.0.1');
-  assert.equal(tree.metrics.listen, '127.0.0.1:5555');
+  assert.equal(tree.metrics.listen, undefined, 'metrics без собственного порта');
 
   // --- Журнал маршрутизации: ротация вместо обнуления, ничего не теряется.
   const log = new RoutingLog();

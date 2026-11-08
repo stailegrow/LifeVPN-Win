@@ -24,6 +24,8 @@ class AppSettings extends EventEmitter {
       autoConnectOnLaunch: false,
       pingOnLaunch: true,
       backgroundAnimation: true,
+      // MAX и подобные — мимо туннеля в «Обходе РФ» (models.ISOLATED_PROCESSES).
+      isolateRuApps: true,
       routing: models.preset('bypass-ru').make()
     };
     const stored = readJSON(paths.settings()) || {};

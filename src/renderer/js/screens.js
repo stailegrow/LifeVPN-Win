@@ -243,6 +243,16 @@ export function RoutingTab({ onEditDomains }) {
           })}
         </div>
       <//>
+      ${routing.presetID === 'bypass-ru' && html`
+        <${Card} title=${t('Изоляция программ', 'App isolation')}>
+          <${Toggle} label=${t('Изолировать российские программы', 'Isolate Russian apps')}
+                     value=${state.settings.isolateRuApps !== false}
+                     onChange=${(v) => act('updateSettings', { isolateRuApps: v })} />
+          <span style=${font('body', 10, { color: css(p.textSecondary, 0.8), lineHeight: 1.3, marginTop: px(-s(4)) })}>
+            ${t('MAX идёт мимо VPN и не узнаёт адрес вашего сервера. Действует со следующего подключения.',
+              'MAX goes around the VPN and cannot learn your server address. Applies from the next connection.')}
+          </span>
+        <//>`}
       <div class="row" style=${{ gap: px(s(14)), alignItems: 'stretch' }}>
         <${Card} title=${t('Свои домены напрямую', 'Own domains direct')} fill>
           <span class="clamp3" style=${font('code', 10, { color: css(p.textPrimary, 0.85), overflowWrap: 'anywhere', lineHeight: 1.35 })}>${domainsSummary}</span>

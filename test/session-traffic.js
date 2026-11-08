@@ -10,7 +10,7 @@ const Parser = require('../src/core/linkParser');
 (async()=>{
  let up=12,down=34,invalid=false;
  const server=http.createServer((req,res)=>{
-   assert.equal(req.url,'/debug/vars');
+   assert.equal(req.url,`http://${Builder.METRICS_HOST}/debug/vars`);
    res.end(invalid?'invalid':JSON.stringify({stats:{outbound:{proxy:{uplink:up,downlink:down},direct:{uplink:9999,downlink:9999}}}}));
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -22,8 +22,8 @@ const Parser = require('../src/core/linkParser');
   meter.reset(server.address().port);assert.equal(meter.snapshot().total,0,'new session resets counters');
   invalid=false;up=50;down=100;await meter.poll();assert.equal(meter.snapshot().total,150);
  } finally {meter.stop();await new Promise(resolve=>server.close(resolve));}
- const tree=Builder.makeTree(Parser.parse('vless://00000000-0000-4000-8000-000000000001@vpn.example.com:443?encryption=none&type=tcp&security=tls&sni=vpn.example.com#Test'), {metricsPort:12345});
- assert.deepEqual(tree.metrics,{tag:'metrics',listen:'127.0.0.1:12345'});
+ const tree=Builder.makeTree(Parser.parse('vless://00000000-0000-4000-8000-000000000001@vpn.example.com:443?encryption=none&type=tcp&security=tls&sni=vpn.example.com#Test'), {metrics:true,selfProcess:[process.execPath]});
+ assert.deepEqual(tree.metrics,{tag:'metrics'});
  assert.equal(tree.policy.system.statsOutboundDownlink,true);assert.deepEqual(tree.stats,{});
  const xray=process.env.LIFEVPN_XRAY;
  if (xray) {
