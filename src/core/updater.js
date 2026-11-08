@@ -213,10 +213,18 @@ class Updater extends EventEmitter {
       this.set({ kind: 'downloading', fraction: 0 });
       work = fs.mkdtempSync(path.join(os.tmpdir(), 'LifeVPN-update-'));
       const target = path.join(work, release.name.replace(/[^\w.-]/g, '_'));
-      await this.download(release.installer, target, release.size);
+      let route;
+      try {
+        route = await this.downloadWithRetries(release.installer, target, release.size);
+      } catch (error) {
+        // Все попытки исчерпаны — даём скачать вручную.
+        openExternal(release.page);
+        throw new Error(t(`Не удалось скачать обновление (${error.message}). Страница релиза открыта в браузере — можно скачать вручную.`,
+          `Could not download the update (${error.message}). The release page opened in the browser — you can download it manually.`));
+      }
 
       // Подпись издателя: без неё установщик не запускаем.
-      const signature = await this.fetchSmall(release.signature);
+      const signature = await this.fetchSmall(release.signature, route);
       const sha256 = await sha256File(target);
       if (!verifySignature(signature, { version: release.version, sha256 })) {
         throw new Error(t('подпись издателя не прошла проверку — обновление не установлено',
@@ -243,9 +251,34 @@ class Updater extends EventEmitter {
     }
   }
 
+  /**
+   * Хранилище файлов GitHub временами отвечает 503/504 или не отвечает
+   * вовсе, а путь через VPN-сервер может быть хуже прямого. Поэтому две
+   * попытки обычным путём (системный прокси — через VPN, если он включён),
+   * затем две напрямую, с паузами. Подлинность от пути не зависит:
+   * установщик всё равно сверяется с подписью издателя.
+   * Возвращает путь, которым удалось скачать.
+   */
+  async downloadWithRetries(url, target, expected, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), plan = DOWNLOAD_PLAN } = {}) {
+    let lastError = new Error(t('загрузка не удалась', 'the download failed'));
+    for (const step of plan) {
+      if (step.delay) await sleep(step.delay);
+      this.set({ kind: 'downloading', fraction: 0 });
+      try {
+        await this.download(url, target, expected, step.route);
+        return step.route;
+      } catch (error) {
+        lastError = error;
+        if (!isRetryable(error)) throw error;
+      }
+    }
+    throw lastError;
+  }
+
   /** Маленький файл релиза (подпись): только https, не больше 4 КиБ. */
-  async fetchSmall(url) {
+  async fetchSmall(url, route = 'system') {
     const { response, done } = await http.request(url, {
+      route,
       httpsOnly: true,
       headers: { 'User-Agent': `LifeVPN/${this.version}` },
       timeout: 30000
@@ -262,18 +295,25 @@ class Updater extends EventEmitter {
     }
   }
 
-  async download(url, target, expected) {
+  async download(url, target, expected, route = 'system') {
     const { response, done } = await http.request(url, {
+      route,
       httpsOnly: true,
       headers: { 'User-Agent': `LifeVPN/${this.version}` },
       timeout: 10 * 60000
     });
     try {
       if (response.status !== 200) {
-        throw new Error(t(`сервер ответил кодом ${response.status}`, `the server answered with code ${response.status}`));
+        const error = new Error(t(`сервер ответил кодом ${response.status}`, `the server answered with code ${response.status}`));
+        error.retryable = isRetryableStatus(response.status);
+        throw error;
       }
       const total = Number(response.headers.get('content-length')) || expected || 0;
       const out = fs.createWriteStream(target);
+      // Ошибку файла ловим здесь: без обработчика брошенная при обрыве
+      // загрузки запись роняет весь процесс.
+      let writeError = null;
+      out.on('error', (error) => { writeError = writeError || error; });
       const reader = response.body.getReader();
       let received = 0;
       let lastEmit = 0;
@@ -294,6 +334,7 @@ class Updater extends EventEmitter {
         }
       }
       await new Promise((resolve, reject) => out.end((error) => (error ? reject(error) : resolve())));
+      if (writeError) throw writeError;
       if (total > 0 && received < total) throw new Error(t('загрузка оборвалась', 'the download was cut short'));
     } finally {
       done();
@@ -330,6 +371,26 @@ class Updater extends EventEmitter {
   }
 }
 
+const DOWNLOAD_PLAN = [
+  { route: 'system', delay: 0 },
+  { route: 'system', delay: 2000 },
+  { route: 'direct', delay: 3000 },
+  { route: 'direct', delay: 6000 }
+];
+
+/** Ответ сервера, который стоит повторить: 408, 429 и 5xx. */
+function isRetryableStatus(code) {
+  return code === 408 || code === 429 || (code >= 500 && code <= 599);
+}
+
+/** Повторяем сетевые сбои и 408/429/5xx; ошибки проверки — никогда. */
+function isRetryable(error) {
+  if (!error) return false;
+  if (typeof error.retryable === 'boolean') return error.retryable;
+  return /timed out|timeout|ERR_TIMED_OUT|ERR_CONNECTION|ERR_NETWORK|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_PROXY|ERR_TUNNEL|ERR_SSL|ECONNRESET|ETIMEDOUT|загрузка оборвалась|cut short|истекло|Не удалось подключиться/i
+    .test(String(error.message || error));
+}
+
 function sha256File(file) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
@@ -337,4 +398,4 @@ function sha256File(file) {
   });
 }
 
-module.exports = { Updater, isNewer, REPOSITORY, RELEASES_PAGE, verifySignature, signedMessage, isOwnReleaseAsset, PRODUCT };
+module.exports = { Updater, isNewer, isRetryable, isRetryableStatus, DOWNLOAD_PLAN, REPOSITORY, RELEASES_PAGE, verifySignature, signedMessage, isOwnReleaseAsset, PRODUCT };

@@ -1,7 +1,7 @@
 {
   "name": "lifevpn",
   "productName": "Life VPN",
-  "version": "3.1.7",
+  "version": "3.1.8",
   "description": "Life VPN — VPN-клиент для Windows на ядре Xray",
   "main": "src/main/main.js",
   "author": "stailegrow",
@@ -9,7 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/self-check.js && node test/subscription-boundaries.js && node test/https-subscription.js && node test/proxy-recovery.js && node test/connection-lifecycle.js && node test/session-traffic.js && node test/security-hardening.js && node test/local-exposure.js",
+    "test": "node test/self-check.js && node test/subscription-boundaries.js && node test/https-subscription.js && node test/proxy-recovery.js && node test/connection-lifecycle.js && node test/session-traffic.js && node test/security-hardening.js && node test/local-exposure.js && node test/update-retry.js",
     "test:memory": "node --max-old-space-size=64 test/subscription-boundaries.js",
     "test:native": "python3 test/native-proxy-errors.py",
     "icons": "python3 scripts/make-icons.py",
